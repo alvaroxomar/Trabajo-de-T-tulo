@@ -19,8 +19,15 @@ T0 = 303 # (Kelvin) Temperatura de 25°C
 Pr =  90 # Presión del aire
 Tr= 290 # (Kelvin) Temperatura del sitio
 delta = Pr*T0/(P0*Tr) # () densidad del aire
-wndx = 10 # m/s
+wndx = 0 # m/s
 wndy = 0 # m/s
+
+def windDist(wndx, wndy, hr, y, alpha):
+    # Input: wndx: valocidad media en x, wndy: velocidad media en y, hr: altura de referencia
+    # y: Matriz de alturas, alpha: coeficiente de rugosidad del piso
+    Wx = wndx*(y/hr)**alpha
+    Wy = wndy
+    return Wx, Wy
 # Sx=3H
 # Sy = 2H
 Sx = 60 # (m) media longitud del plano de tierra 
@@ -40,7 +47,7 @@ Tol = 10**(-4)
 con = 0
 max_iter_rho = 300
 max_iter = 800
-nodosx = 100
+nodosx = 120
 nodosy = 100
 def mod(z1,z2):
     return np.sqrt((z1[0]-z2[0])**2 + (z1[1]-z2[1])**2)
@@ -107,11 +114,14 @@ Q = calcular_coeficientes_potencial(coordenada, coordenada_im, K, R, h, Vol)
 '''
 
 
-windx = np.ones((nodosx, nodosy)) * wndx
-windy = np.ones((nodosx, nodosy)) * wndy
+
 # Definir coordenadas de la malla en x y y
 x = np.linspace(-Sx, Sx, nodosy)
 y = np.linspace(Sy, 0, nodosx)
+X,Y =np.meshgrid(x,y)
+wndx1 = np.ones((nodosx, nodosy)) * wndx
+wndy1 = np.ones((nodosx, nodosy)) * wndy
+windx, windy = windDist(wndx1, wndy1, l, Y, 0.3)
 dx = np.abs(x[1] - x[0])
 dy = np.abs(y[1] - y[0])
 def calcular_campo_electrico_inicial(nodosx, nodosy, x, y, w, h, Q, K):
@@ -142,7 +152,7 @@ def calcular_campo_electrico_inicial(nodosx, nodosy, x, y, w, h, Q, K):
 
 Exx, Eyy, E = calcular_campo_electrico_inicial(nodosx,nodosy, x, y, w, h, Q, K)
 
-X,Y =np.meshgrid(x,y)
+
 U = Exx
 Ww = Eyy
 print('Campo eléctrico  electrostático libre iones calculado')
@@ -194,7 +204,7 @@ def rhoA(Sx, Jp, b, a,  m_ind, d):
     # Asume que existe efecto corona
     rho_i = (Sx*Jp)*10**(-3)/(np.pi*b*(100*a)*m_ind*(30*d + 9*np.sqrt(d/(100*a)))) # radio está en cm
     return rho_i
-
+'''
 y_p = np.zeros_like(Y)
 indices_sup = (np.abs(Y[:,0] - int(Sy-y_coor))).argmin()
 indices_inf = (np.abs(Y[:,0] - int(y_coor))).argmin()
@@ -203,7 +213,7 @@ y_p[(nodosy-indices_sup):,:] = Y[(indices_inf-len(y_p[(nodosy-indices_sup):,0]))
 #y_f = np.zeros_like(Y)
 #y_f[indices_inf:,:] = Y[(indices_inf-(nodosy-2)):indices_inf,:]
 Ya = (np.flip(Y)-(Sy-y_coor))
-
+'''
 def potencial_electrostático(f_point, f_value, X, Y, radio, ind, carga=None):
     Vm = np.zeros((nodosx,nodosy))
     Vm2 = Vm.copy()
@@ -248,25 +258,25 @@ def convergencia(ro1,ro0, tol):
 def dev_1sentido(Ex, Ey, ep0, rhoi_1, rhoj_1, dx, dy):
     alpha = Ey*ep0/(2*dy) + Ex*ep0/(2*dx)
     beta = ep0*(Ey*rhoi_1/dy + Ex*rhoj_1/dx)
-    dis = np.abs(alpha**2 + beta)
-    G = -alpha + np.sqrt(dis)
+    dis = alpha**2 + beta+0j
+    G = np.abs(-alpha + np.sqrt(dis))
     #G = np.sqrt(dis)
     #G[np.isnan(G)] = 0
     return G
 def dev_central(Ex, Ey,ep0, rhodx, rhoix, rhoiy, rhosy, dx, dy):
     d_rho_dx = (rhodx - rhoix) / (2 * dx)
     d_rho_dy = (rhoiy - rhosy) / (2 * dy)
-    G = np.sqrt(np.abs(-ep0 * (Ex * d_rho_dx + Ey * d_rho_dy)))
+    G = np.abs(np.sqrt(-ep0 * (Ex * d_rho_dx + Ey * d_rho_dy)+0j))
     return G
 def dev_triple_di(Ex, Ey, ep0, rhoys, rhoyi, rhox, dx, dy):
     alpha  = Ex*ep0/(2*dx)
     beta = -ep0*(Ey*rhoyi/(2*dy) - (Ex*rhox/dx + Ey*rhoys/(2*dy)))
-    G = -alpha + np.sqrt(np.abs(alpha**2 + beta))
+    G = np.abs(-alpha + np.sqrt(alpha**2 + beta+0j))
     return G
 def dev_triple_si(Ex, Ey, ep0, rhoxd, rhoxi, rhoy, dx, dy):
     alpha  = Ey*ep0/(2*dy)
     beta = -ep0*(Ex*rhoxi/(2*dx) - (Ey*rhoy/dy + Ex*rhoxd/(2*dx)))
-    G = -alpha + np.sqrt(np.abs(alpha**2 + beta))
+    G = np.abs(-alpha + np.sqrt(alpha**2 + beta +0j))
     return G
 
 # Función para actualizar rho utilizando operaciones vectorizadas
@@ -435,16 +445,16 @@ def apply_boundary_conditions_2D(u, V_boundary, Exx=None, Eyy=None, dx=None, dy=
     # Borde izquierdo (Neumann si Exx está definido)
     if Exx is not None and dx is not None:
         #u[:, 0] = u[:, 1] + dx * (Exx[:, 0]+windx[:,0]/mov)
-        u[:, 0] = u[:, 1] + dx * (Exx[:, 0])
+        u[:-1, 0] = u[:, 1] + dx * (Exx[:, 0])
     else:
-        u[:, 0] = V_boundary[:, 0]  # Dirichlet
+        u[:-1, 0] = V_boundary[:-1, 0]  # Dirichlet
 
     # Borde derecho (Neumann si Exx está definido)
     if Exx is not None and dx is not None:
         #u[:, -1] = u[:, -2] - dx * (Exx[:, -1]+windx[:,-1]/mov)
-        u[:, -1] = u[:, -2] - dx * (Exx[:, -1])
+        u[:-1, -1] = u[:, -2] - dx * (Exx[:, -1])
     else:
-        u[:, -1] = V_boundary[:, -1]  # Dirichlet
+        u[:-1, -1] = V_boundary[:-1, -1]  # Dirichlet
 
     # Borde superior (Neumann si Eyy está definido)
     if Eyy is not None and dy is not None:
@@ -496,7 +506,7 @@ def algoritmo_V_rho(V, rho1, dx, dy, fixed_point, fixed_value, max_iter):
     V_b =  Vm.copy()
     for iteration in range(max_iter):
         Vold = V.copy()
-        V = update_v(V, f_rhs, dx,dy,fixed_point=fixed_point, fixed_value=fixed_value, V_boundary=V_b, Exx=Exx,Eyy=Eyy)
+        V = update_v(V, f_rhs, dx,dy,fixed_point=fixed_point, fixed_value=fixed_value, V_boundary=V_b, Exx=None,Eyy=None)
         condicion,diff = convergencia(V, Vold, 0.01)
         if condicion:
             #print(f"Convergencia alcanzada para V en la iteración {iteration}")
@@ -508,13 +518,13 @@ def algoritmo_V_rho(V, rho1, dx, dy, fixed_point, fixed_value, max_iter):
 ## Cálculo de potencial eléctrico inicial en base a la carga calculada por CSM
 Vmi,Vmi2 = potencial_electrostático(fixed_point, fixed_value, X, Y, R, 0, carga=Q)
 ##### Resolución ecuación de continuidad
-Jp = 0.6744*10**(-8) # (A/m^2) Densidad de corriente iónica promedio sobre el plano de tierra (Se debe adivinar este valor)
+Jp = 0.5*10**(-9) # (A/m^2) Densidad de corriente iónica promedio sobre el plano de tierra (Se debe adivinar este valor)
 # Condiciones de borde
 rho_i = rhoA(Sx, Jp, mov, R, m, delta)
 rho_inicial = np.zeros((nodosx, nodosy))
 Exxini, Eyyini, Em = calcular_campo_electrico(Vmi, dx, dy) # campo electrostático inicial
 rho_inicial[fixed_point] = rho_i
-rho_inicial[-1,1:-1] = Jp/(mov*np.sqrt(np.abs((Eyyini[-1,1:-1]+windy[-1,1:-1]/mov)**2+(Exxini[-1,1:-1]+windx[-1,1:-1]/mov)**2)))
+rho_inicial[-1,1:-1] = np.abs(Jp/(mov*np.sqrt((Eyyini[-1,1:-1]+windy[-1,1:-1]/mov)**2+(Exxini[-1,1:-1]+windx[-1,1:-1]/mov)**2+0j)))
 #print(Vmi)
 Vm = Vmi.copy()
 it_global = 260
@@ -527,10 +537,11 @@ for n in range(it_global):
     else:
         rho_n = algoritmo_rho_v(Vm, rho_n, dx, dy, windx, windy, max_iter_rho, Jp, rho_i, met=0)
     Vm = algoritmo_V_rho(Vm, rho_n, dx, dy, fixed_point, fixed_value, max_iter)
-    condicion,diff = convergencia(Vm, Volder, 0.01)
+    condicion,diff = convergencia(Vm, Volder, 0.07)
     if n%20 == 0:
         print(r'Diferencia relativa V y Vold: '+str(diff))
     if condicion:
+        print(r'Diferencia relativa V y Vold: '+str(diff))
         print(f"Convergencia alcanzada para V en la iteración {n}")
         break
 #for iteration in range(max_iter):
