@@ -8,7 +8,7 @@ from matplotlib.colors import LogNorm
 plt.close('all')
 ################################
 ## Parámetros genericos
-R = 6.35 * 10**(-2) # (m) radio equivalente del conductor
+R = 10 * 10**(-2) # (m) radio equivalente del conductor
 epsilon0 = (1/(36*np.pi)) * 10**(-9) # (F/m) permitividad del vacío
 Vol = 300000 # (V) voltaje de la línea
 K = 1/(2*np.pi*epsilon0) # factor de multiplicación
@@ -22,11 +22,15 @@ delta = Pr*T0/(P0*Tr) # () densidad del aire
 wndx = 0 # m/s
 wndy = 0 # m/s
 
-def windDist(wndx, wndy, hr, y, alpha):
+def windDist(wndx, wndy, hr, y, alpha, uni):
     # Input: wndx: valocidad media en x, wndy: velocidad media en y, hr: altura de referencia
     # y: Matriz de alturas, alpha: coeficiente de rugosidad del piso
-    Wx = wndx*(y/hr)**alpha
-    Wy = wndy
+    if uni==1:
+        Wx = wndx*(y/hr)**alpha
+        Wy = wndy
+    elif uni==0:
+        Wx = wndx
+        Wy = wndy
     return Wx, Wy
 # Sx=3H
 # Sy = 2H
@@ -36,7 +40,7 @@ l = 1 # (m) distancia desde el suelo a la altura de interés de influencia de ca
 ## Definición coordenadas conductores caso bipolar
 #coordenada = [(6,7), (-6,7)] # (m) coordenadas cargas en posición de los conductores
 x_coor = 0
-y_coor = 30
+y_coor = 22
 coordenada = [(x_coor,y_coor)]
 coordenada_im =  [(x, -y) for x, y in coordenada] # (m) coordenadas de las cargas imágenes
 h = np.array([y for x,y in coordenada]) # (m) alturas de los conductores
@@ -45,10 +49,10 @@ w = np.array([x for x,y in coordenada]) # (m) anchos de los conductores
 #Ver = 1 # (m) Altura donde interesa medir el campo eléctrico
 Tol = 10**(-4)
 con = 0
-max_iter_rho = 300
-max_iter = 800
-nodosx = 120
-nodosy = 100
+max_iter_rho = 40
+max_iter = 100
+nodosx = 180
+nodosy = 180
 def mod(z1,z2):
     return np.sqrt((z1[0]-z2[0])**2 + (z1[1]-z2[1])**2)
 
@@ -121,7 +125,7 @@ y = np.linspace(Sy, 0, nodosx)
 X,Y =np.meshgrid(x,y)
 wndx1 = np.ones((nodosx, nodosy)) * wndx
 wndy1 = np.ones((nodosx, nodosy)) * wndy
-windx, windy = windDist(wndx1, wndy1, l, Y, 0.3)
+windx, windy = windDist(wndx1, wndy1, l, Y, 0.1, 0)
 dx = np.abs(x[1] - x[0])
 dy = np.abs(y[1] - y[0])
 def calcular_campo_electrico_inicial(nodosx, nodosy, x, y, w, h, Q, K):
@@ -275,7 +279,7 @@ def dev_triple_di(Ex, Ey, ep0, rhoys, rhoyi, rhox, dx, dy):
     return G
 def dev_triple_si(Ex, Ey, ep0, rhoxd, rhoxi, rhoy, dx, dy):
     alpha  = Ey*ep0/(2*dy)
-    beta = -ep0*(Ex*rhoxi/(2*dx) - (Ey*rhoy/dy + Ex*rhoxd/(2*dx)))
+    beta = -ep0*(Ex*rhoxd/(2*dx) - (Ey*rhoy/dy + Ex*rhoxi/(2*dx)))
     G = np.abs(-alpha + np.sqrt(alpha**2 + beta +0j))
     return G
 
@@ -285,7 +289,7 @@ def update_rho_vectorized(rhoini, Ex, Ey, dx, dy, epsilon0, wx, wy, rho_bound, m
     #rho_new = np.copy(rho)
     rho = rhoini.copy()
     rho[fixed_point] = rho_bound[fixed_point]  # Mantener la condición en el punto central
-    rho[-1, 1:-1] = rho_bound[-1,1:-1]  # Mantener la condición en el borde inferior
+    rho[-1, :] = rho_bound[-1,:]  # Mantener la condición en el borde inferior
     Ewx = Ex + wx/mov
     Ewy = Ey + wy/mov
     cx =fixed_point[1] # índice posición en x
@@ -303,22 +307,23 @@ def update_rho_vectorized(rhoini, Ex, Ey, dx, dy, epsilon0, wx, wy, rho_bound, m
         #rho[1:-1, 1:-1] = np.where(G >= 0, np.sqrt(G), 0)
         # Condiciones en los bordes
         #Gi = -epsilon0 * (Ewx[1:-1, 0] * (rho[1:-1, 1] - rho[1:-1, 0]) / dx + Ewy[1:-1, 0] * (rho[2:, 0] - rho[:-2, 0]) / (2 * dy))
-        rhoN[1:-1,0] = dev_triple_di(Ewx[1:-1,0], Ewy[1:-1,0], epsilon0, rho[:-2, 0], rho[2:, 0], rho[1:-1, 1], dx, dy) # borde izquierdo
+        #rhoN[1:-1,0] = dev_triple_di(Ewx[1:-1,0], Ewy[1:-1,0], epsilon0, rho[:-2, 0], rho[2:, 0], rho[1:-1, 1], dx, dy) # borde izquierdo
         #Gd = -epsilon0 * (Ewx[1:-1, -1] * (rho[1:-1, -1] - rho[1:-1, -2]) / dx + Ewy[1:-1, -1] * (rho[2:, -1] - rho[:-2, -1]) / (2 * dy))
-        rhoN[1:-1,-1] = dev_triple_di(Ewx[1:-1,-1], Ewy[1:-1,-1], epsilon0, rho[:-2, -1], rho[2:, -1], rho[1:-1, -2], dx, dy) # borde derecho
+        #rhoN[1:-1,-1] = dev_triple_di(Ewx[1:-1,-1], Ewy[1:-1,-1], epsilon0, rho[:-2, -1], rho[2:, -1], rho[1:-1, -2], dx, dy) # borde derecho
         #Gs = -epsilon0 * (Ewx[0, 1:-1] * (rho[0, 2:] - rho[0, :-2]) / (2 * dx) + Ewy[0, 1:-1] * (rho[1, 1:-1] - rho[0, 1:-1]) / dy)
-        rhoN[0, 1:-1] = dev_triple_si(Ewx[0, 1:-1], Ewy[0, 1:-1], epsilon0, rho[0, 2:], rho[0, :-2], rho[1, 1:-1], dx, dy) # borde superior
+        #rhoN[0, 1:-1] = dev_triple_si(Ewx[0, 1:-1], Ewy[0, 1:-1], epsilon0, rho[0, 2:], rho[0, :-2], rho[1, 1:-1], dx, dy) # borde superior
+        #rhoN[-1, 1:-1] = dev_triple_si(Ewx[-1, 1:-1], Ewy[-1, 1:-1], epsilon0, rho[-1, 2:], rho[-1, :-2], rho[-2, 1:-1], dx, dy) # borde inferior
         #Geis = -epsilon0 * (Ewx[0, 0] * (rho[0, 1] - rho[0, 0]) / dx + Ewy[0, 0] * (rho[1, 0] - rho[0, 0]) / dy)
-        rhoN[0, 0] = dev_1sentido(Ewx[0, 0], Ewy[0, 0], epsilon0, rho[1, 0], rho[0, 1], dx, dy) # esquina superior izquierda
+        #rhoN[0, 0] = dev_1sentido(Ewx[0, 0], Ewy[0, 0], epsilon0, rho[1, 0], rho[0, 1], dx, dy) # esquina superior izquierda
         #Geds = -epsilon0 * (Ewx[0, -1] * (rho[0, -1] - rho[0, -2]) / dx + Ewy[0, -1] * (rho[1, -1] - rho[0, -1]) / dy)
-        rhoN[0, -1] = dev_1sentido(Ewx[0, -1], Ewy[0, -1], epsilon0, rho[1, -1], rho[0, -2], dx, dy) # esquina superior derecha
+        #rhoN[0, -1] = dev_1sentido(Ewx[0, -1], Ewy[0, -1], epsilon0, rho[1, -1], rho[0, -2], dx, dy) # esquina superior derecha
         #Geii = -epsilon0 * (Ewx[-1, 0] * (rho[-1, 1] - rho[-1, 0]) / dx + Ewy[-1, 0] * (rho[-1, 0] - rho[-2, 0]) / dy)
-        rhoN[-1, 0] = dev_1sentido(Ewx[-1, 0], Ewy[-1, 0], epsilon0, rho[-2, 0], rho[-1, 1], dx, dy) # esquina inferior izquierda
+        #rhoN[-1, 0] = dev_1sentido(Ewx[-1, 0], Ewy[-1, 0], epsilon0, rho[-2, 0], rho[-1, 1], dx, dy) # esquina inferior izquierda
         #Gedi = -epsilon0 * (Ewx[-1, -1] * (rho[-1, -1] - rho[-1, -2]) / dx + Ewy[-1, -1] * (rho[-1, -1] - rho[-2, -1]) / dy)
-        rhoN[-1, -1] = dev_1sentido(Ewx[-1, -1], Ewy[-1, -1], epsilon0, rho[-2, -1], rho[-1, -2], dx, dy) # esquina inferior derecha
+        #rhoN[-1, -1] = dev_1sentido(Ewx[-1, -1], Ewy[-1, -1], epsilon0, rho[-2, -1], rho[-1, -2], dx, dy) # esquina inferior derecha
     # Aplicar condiciones de borde
     rhoN[fixed_point] = rho_bound[fixed_point]  # Mantener la condición en el punto central
-    rhoN[-1, 1:-1] = rho_bound[-1,1:-1]  # Mantener la condición en el borde inferior
+    rhoN[-1, :] = rho_bound[-1,:]  # Mantener la condición en el borde inferior
     
     return rhoN
 
@@ -368,7 +373,9 @@ def algoritmo_rho_v(V, rho_ini, dx, dy, windx, windy, max_iter_rho, Jplate, rho_
     # Se define a la malla rho_b con las condiciones de borde
     rho_b[fixed_point] = rho_A
     # COndición de desplazamiento de la densidad de carga debido al viento
-    rho_b[-1,1:-1] = Jplate/(mov*np.sqrt(np.abs((Eyyi[-1,1:-1]+windy[-1,1:-1]/mov)**2+(Exxini[-1,1:-1]+windx[-1,1:-1]/mov)**2))) # se postula que la dirección de E será solamente vertical
+    rho_b[-1,:] = np.abs(Jplate/(mov*np.sqrt((Eyyi[-1,:]+windy[-1,:]/mov)**2+(Exxi[-1,:]+windx[-1,:]/mov)**2+0j))) # se postula que la dirección de E será solamente vertical
+    #rho_b[-1,:] = np.abs(-(epsilon0/dy**2)*(V[-2,:]-2*V[-3,:]))
+    #rho_b[-1,:] = 0
     rho1 = rho_ini.copy() # Parte con una distribución con ceros y las condiciones de borde, luego se actulizan los valores
     '''
     plt.figure(12)
@@ -518,13 +525,15 @@ def algoritmo_V_rho(V, rho1, dx, dy, fixed_point, fixed_value, max_iter):
 ## Cálculo de potencial eléctrico inicial en base a la carga calculada por CSM
 Vmi,Vmi2 = potencial_electrostático(fixed_point, fixed_value, X, Y, R, 0, carga=Q)
 ##### Resolución ecuación de continuidad
-Jp = 0.5*10**(-9) # (A/m^2) Densidad de corriente iónica promedio sobre el plano de tierra (Se debe adivinar este valor)
+Jp = 0.5*10**(-8) # (A/m^2) Densidad de corriente iónica promedio sobre el plano de tierra (Se debe adivinar este valor)
 # Condiciones de borde
 rho_i = rhoA(Sx, Jp, mov, R, m, delta)
 rho_inicial = np.zeros((nodosx, nodosy))
 Exxini, Eyyini, Em = calcular_campo_electrico(Vmi, dx, dy) # campo electrostático inicial
 rho_inicial[fixed_point] = rho_i
-rho_inicial[-1,1:-1] = np.abs(Jp/(mov*np.sqrt((Eyyini[-1,1:-1]+windy[-1,1:-1]/mov)**2+(Exxini[-1,1:-1]+windx[-1,1:-1]/mov)**2+0j)))
+rho_inicial[-1,:] = np.abs(Jp/(mov*np.sqrt((Eyyini[-1,:]+windy[-1,:]/mov)**2+(Exxini[-1,:]+windx[-1,:]/mov)**2+0j)))
+#rho_inicial[-1,:] = np.abs(-(epsilon0/dy**2)*(Vmi[-2,:]-2*Vmi[-3,:]))
+#rho_inicial[-1,:] = 0
 #print(Vmi)
 Vm = Vmi.copy()
 it_global = 260
@@ -537,7 +546,7 @@ for n in range(it_global):
     else:
         rho_n = algoritmo_rho_v(Vm, rho_n, dx, dy, windx, windy, max_iter_rho, Jp, rho_i, met=0)
     Vm = algoritmo_V_rho(Vm, rho_n, dx, dy, fixed_point, fixed_value, max_iter)
-    condicion,diff = convergencia(Vm, Volder, 0.07)
+    condicion,diff = convergencia(Vm, Volder, 0.01)
     if n%20 == 0:
         print(r'Diferencia relativa V y Vold: '+str(diff))
     if condicion:

@@ -15,10 +15,10 @@ Vol1 = 300000 # (V) voltaje de la línea
 Vol2 = -300000 # V
 ele = -1.6021*10**(-19) # (C) carga del electrón
 K = 1/(2*np.pi*epsilon0) # factor de multiplicación
-movp = 7*10**(-4) # (m^2/Vs) movilidad iones positivos
-movn = 5*10**(-4) # (m^2/Vs) movilidad iones negativos
-mp = 0.7 # (AD) factor de rugosidad conductor positivo
-mn = 0.7 # (AD) factor de rugosidad conductor negativo
+movp = 1.5*10**(-4) # (m^2/Vs) movilidad iones positivos
+movn = 2*10**(-4) # (m^2/Vs) movilidad iones negativos
+mp = 0.85 # (AD) factor de rugosidad conductor positivo
+mn = 0.85 # (AD) factor de rugosidad conductor negativo
 Rep = 1.8*10**(-6) # (m^3/2) Coeficiente de recombinación iones
 #Ren = # (m^3/2) Coeficiente de recombinación iones
 P0 =101.3 # (kPa) Presión del aire a nivel de mar
@@ -28,6 +28,17 @@ Tr= 290 # (Kelvin) Temperatura del sitio
 delta = Pr*T0/(P0*Tr) # () densidad del aire
 wndx = 0 # m/s
 wndy = 0 # m/s
+
+def windDist(wndx, wndy, hr, y, alpha, uni):
+    # Input: wndx: valocidad media en x, wndy: velocidad media en y, hr: altura de referencia
+    # y: Matriz de alturas, alpha: coeficiente de rugosidad del piso
+    if uni==1:
+        Wx = wndx*(y/hr)**alpha
+        Wy = wndy
+    elif uni==0:
+        Wx = wndx
+        Wy = wndy
+    return Wx, Wy
 # Sx=3H
 # Sy = 2H
 Sx = 60 # (m) media longitud del plano de tierra 
@@ -51,6 +62,20 @@ max_iter_rho = 800
 max_iter = 1000
 nodosx = 100
 nodosy = 100
+windx = np.ones((nodosx, nodosy)) * wndx
+windy = np.ones((nodosx, nodosy)) * wndy
+# Definir coordenadas de la malla en x y y
+x = np.linspace(-Sx, Sx, nodosy)
+y = np.linspace(Sy, 0, nodosx)
+dx = np.abs(x[1] - x[0])
+dy = np.abs(y[1] - y[0])
+
+# Encontrar los índices más cercanos
+def encuentra_nodos(x0,y0):
+    indice_x0 = (np.abs(x - x0)).argmin()
+    indice_y0 = (np.abs(y - y0)).argmin()
+    return (indice_x0,indice_y0)
+
 def mod(z1,z2):
     return np.sqrt((z1[0]-z2[0])**2 + (z1[1]-z2[1])**2)
 
@@ -78,13 +103,7 @@ V = [Vol1,  Vol2]
 Q = np.dot(np.linalg.inv(P),V) # Se determinan las cargas de los conductores
 
 
-windx = np.ones((nodosx, nodosy)) * wndx
-windy = np.ones((nodosx, nodosy)) * wndy
-# Definir coordenadas de la malla en x y y
-x = np.linspace(-Sx, Sx, nodosy)
-y = np.linspace(Sy, 0, nodosx)
-dx = np.abs(x[1] - x[0])
-dy = np.abs(y[1] - y[0])
+
 def calcular_campo_electrico_inicial(nodosx, nodosy, x, y, w, h, Q, K):
     # Inicializar matrices para las componentes y magnitud del campo eléctrico
     E = np.zeros((nodosx, nodosy))
@@ -136,43 +155,6 @@ fixed_point = [fixed_point1, fixed_point2]
 fixed_value = [fixed_value1, fixed_value2]
 
 ## Resolución para densidad de carga en el espacio
-'''
-con = 1
-c = 0
-rho_n = rho.copy() # se copia el primer valor
-#while np.all(con > 10**(-7)):
-#    print(rho_n)
-while True:
-    if c<200:
-        for i in range(1, len(rho[:,0])-1):
-            for j in range(1, len(rho[0,:])-1):
-                if i == posy_conductor and j == posx_conductor:
-                    rho_n[i][j] = rho_i
-                else:
-                    #alpha = 0.5*(np.abs(Exx[i][j])/dx + np.abs(Eyy[i][j])/dy)*epsilon0
-                    #beta = epsilon0*(np.abs(Eyy[i][j])*rho_n[i-1][j]/dy + np.abs(Exx[i][j])*rho_n[i][j-1]/dx)
-                    #alpha = 0.5*(Exx[i][j]/dx + Eyy[i][j]/dy)*epsilon0
-                    #beta = epsilon0*(Eyy[i][j]*rho_n[i-1][j]/dy + Exx[i][j]*rho_n[i][j-1]/dx)
-                    #rho_n[i][j] = -alpha + np.sqrt(np.abs(alpha**2 + beta)) # Se toma solución positiva dado que se asume que todas los iones son de carga positiva
-                    a = rho_n[i][j+1]- rho_n[i][j-1]
-                    b = rho_n[i+1][j]- rho_n[i-1][j]
-                    rho_n[i][j] = np.sqrt(0.5*epsilon0*(np.abs(Exx[i][j]*(-a))/dx + np.abs(Eyy[i][j]*(-b))/dy))
-                    #if alpha**2 + beta < 0:
-                    #    print(alpha**2 + beta)
-                    #    break
-        #print(r'rho_n: '+str(rho_n))
-        #print(r'rho: '+str(rho))
-        #print(r'iteracion: '+str(c))
-        con = np.abs(rho_n - rho)
-        #print(r'conv: '+str(con))
-        c +=1 
-        rho = rho_n.copy()
-    else:
-        break
-'''
-
-
-import numpy as np
 
 def calcular_potencial_con_borde_vectorizado(E_x, E_y, dx, dy):
     """
@@ -204,9 +186,17 @@ def calcular_potencial_con_borde_vectorizado(E_x, E_y, dx, dy):
     
     return V
 
-def rhoA(Sx, Jp, b, a,  m_ind, d,I2l):
-    rho_ip = (I2l)*10**(-3)/(np.pi*b[0]*(100*a[0])*m_ind[0]*(30*d + 9*np.sqrt(d/(100*a[0])))) # radio está en cm
-    rho_in = -(Sx*Jp-I2l/2)*10**(-3)/(np.pi*b[1]*(100*a[1])*m_ind[1]*(30*d + 9*np.sqrt(d/(100*a[1])))) # radio está en cm
+#def rhoA(Sx, Jp, b, a,  m_ind, d,I2l):
+#rho_ip = (I2l)*10**(-3)/(np.pi*b[0]*(100*a[0])*m_ind[0]*(30*d + 9*np.sqrt(d/(100*a[0])))) # radio está en cm
+    #rho_in = -(Sx*Jp-I2l/2)*10**(-3)/(np.pi*b[1]*(100*a[1])*m_ind[1]*(30*d + 9*np.sqrt(d/(100*a[1])))) # radio está en cm
+def rhoA(Ey,D, ep0, V0_p,V0_s, V, Ecrit_p,Ecrit_s, R):    
+    '''
+    Ey: Campo  de carga libre en medio camino entre los dos conductores
+    Ecrit_p,_s:  Campo gradiente corona para conductor positivo y negativo
+    V0_p,_s: Voltajes de gradientecorona  en los conductores positivosy negativos, estos incluyen al factor de rugosidad
+    '''
+    rho_ip = Ey*D*8*ep0*V0_p*(V[0]-V0_p)/(Ecrit_p*R[0]*D**2*V[0]*(5-4*V0_p/V[0]))
+    rho_in = Ey*D*8*ep0*V0_s*(V[1]-V0_s)/(Ecrit_s*R[1]*D**2*V[1]*(5-4*V0_p/V[1]))
     return rho_ip, rho_in # Entrega condiciones de borde del condcutor positivo y negativo respectivamente
 '''
 y_p = np.zeros_like(Y)
@@ -257,10 +247,10 @@ def resuelve2(a, b, c, d, g, f):
     A2 = d*(d-g*b/a)
     B2 = f*(2*d-g*b/a)+2*c*g**2
     C2 = f**2
-    Gr = (-B2 + np.sqrt(np.abs(B2**2-4*A2*C2)))/(2*A2)
-    ysol = np.sqrt(np.abs(Gr))
+    Gr = (-B2 + np.sqrt(B2**2-4*A2*C2+0j))/(2*A2)
+    ysol = np.abs(np.sqrt(Gr))
     Gy = (b*ysol)**2 - 4*a*c
-    xsol = (-b*ysol + np.sqrt(np.abs(Gy)))/(2*a)
+    xsol = np.abs((-b*ysol + np.sqrt(Gy+0j))/(2*a))
     return xsol,ysol
 
 # Función para actualizar rho utilizando operaciones vectorizadas
@@ -398,7 +388,7 @@ def algoritmo_rho_v(V, rho_ini, dx, dy, windx, windy,max_iter_rho, Jplatep, Jpla
             rho1p, rho1n = update_rho_vectorized(rho_bp, rho_bn, Exxi, Eyyi, dx, dy, epsilon0, windx, windy, rho_bp, rho_bn)
         else:
             rho1p, rho1n = update_rho_vectorized(rho1p, rho1n, Exxi, Eyyi, dx, dy, epsilon0, windx, windy, rho_bp, rho_bn)
-        rho1 = rho1p-rho1n
+        rho1 = rho1p-rho1n # rho1py rho1n son usados en sus valores absolutos
         # Criterio de convergencia
         condicion, diff = convergencia(rho1, rho0, 0.01)
         #print(r'Tolerancia $\rho_1$ = '+str(diff))
@@ -516,14 +506,16 @@ def densidad_voltaje(Volt, rho):
 def algoritmo_V_rho(V, rho1, dx, dy, fd_point, fd_value, max_iter, Vb):
     f_rhs = funcion_f(rho1)
     V_b =  Vb.copy()
+    Vi = V.copy()
     for iteration in range(max_iter):
-        Vold = V.copy()
-        V = update_v(V, f_rhs, dx,dy,fixed_point=fd_point, fixed_value=fd_value, V_boundary=V_b, Exx=Exx,Eyy=Eyy)
+        Vold = Vi.copy()
+        Vi = update_v(V, f_rhs, dx,dy,fixed_point=fd_point, fixed_value=fd_value, V_boundary=V_b, Exx=Exx,Eyy=Eyy)
         condicion, diff = convergencia(V, Vold, 0.01)
         if condicion:
             #print(f"Convergencia alcanzada para V en la iteración {iteration}")
             break
-    return V
+        V = Vi
+    return Vi
 
 # ALGORITMO PRINCIPAL
 # Se calcula primero el potencial incial en base a CSM
@@ -535,9 +527,39 @@ Jpp = 30.744*10**(-8) # (A/m^2) Densidad de corriente iónica promedio sobre el 
 Jp = 13*10**(-8)
 Jpn = Jp - Jpp
 # Condiciones de borde
-rho_ip, rho_in = rhoA(Sx, Jp, np.array([movp,movn]), np.array([Rp,Rn]), np.array([mp,mn]), delta, Jpp)
-rho_inicial = np.zeros((nodosx, nodosy))
+#rho_ip, rho_in = rhoA(Sx, Jp, np.array([movp,movn]), np.array([Rp,Rn]), np.array([mp,mn]), delta, Jpp)
+# Coordenadas de los nodos específicos (índices en la malla)
+indice1 = (2, 3)  # Nodo en la posición (x=2, y=3) en términos de índices
+indice2 = (7, 8)  # Nodo en la posición (x=7, y=8)
 
+# Obtener las coordenadas físicas de los nodos
+pos_central = ((x_coor1+x_coor2)/2, (y_coor1+y_coor2)/2)
+nod_central =encuentra_nodos(pos_central[0], pos_central[1])
+# Calcular el punto central
+Ey = E[nod_central[1],nod_central[0]]
+D = np.abs(x_coor2-x_coor1)
+def E_onset(m, delta, a):
+    '''
+    a: radio conductor (m)
+    delta: densidad relativa (ad)
+    m: factor de conductor (ad)
+    '''
+    g0 =29.8 # kV/cm
+    return 100*g0*m*(delta + 0.301*np.sqrt(delta/(100*a))) # kV/m
+def V_onset(m, Ecr, a):
+    '''
+    a: radio conductor (m)
+    m: factor de conductor (ad)
+    Ecr: Campo crítico corona (kV/m)
+    '''
+    return m*a*2*Ecr*np.log(2*y_coor1/a)
+Ecritp= E_onset(mp, delta, R[0])
+Ecritn= E_onset(mn, delta, R[1])
+V0p = V_onset(mp, Ecritp, R[0])
+V0n = V_onset(mn, Ecritn, R[1])
+rho_ip, rho_in = rhoA(Ey, D, epsilon0, V0p, V0n, V, Ecritp, Ecritn, R)
+rho_inicial = np.zeros((nodosx, nodosy))
+'''
 Exxini, Eyyini, Em = calcular_campo_electrico(Vmi, dx, dy) # campo electrostático inicial
 
 rho_inicial[fixed_point[0]] = rho_ip
@@ -555,7 +577,7 @@ for n in range(it_global):
         rho_d, rho_p, rho_n = algoritmo_rho_v(Vmi, rho_inicial, dx, dy, windx, windy, max_iter_rho, Jpp, Jpn, [rho_ip, rho_in])
     else:
         rho_d, rho_p, rho_n = algoritmo_rho_v(Vm, rho_d0, dx, dy, windx, windy, max_iter_rho, Jpp, Jpn, [rho_ip, rho_in])
-    rho_d0 = rho_p-rho_n
+    rho_d0 = rho_p-rho_n # LOS rho_pn son puestos en sus valores absolutos
     Vm = algoritmo_V_rho(Vm, rho_d0, dx, dy, fixed_point, fixed_value, max_iter, Vmi)
     condicion,diff = convergencia(Vm, Volder, 0.01)
     if condicion:
@@ -571,7 +593,10 @@ print('Potencial calculado')
 ##### Cálculo de densidad de corriente iónica
 
 Edefx, Edefy, Edef = calcular_campo_electrico(Vm, dx, dy)
-J = rho_p*movp*np.sqrt((Edefx+(windx/movp))**2 + (Edefy+(windy/movp))**2) + rho_n*movn*np.sqrt((Edefx-(windx/movn))**2 + (Edefy-(windy/movn))**2)
+Jplus = rho_p*movp*np.sqrt((Edefx+(windx/movp))**2 + (Edefy+(windy/movp))**2)
+Jdiff = rho_n*movn*np.sqrt((Edefx-(windx/movn))**2 + (Edefy-(windy/movn))**2)
+Ei = Edef[int((Sy-l)/dy),:] # Magnitud Campo eléctrico a nivel de piso
+J = Jplus + Jdiff
 Ei = Edef[int((Sy-l)/dy),:] # Magnitud Campo eléctrico a nivel de piso
 Ji = J[int((Sy-l)/dy),:] # Densidad de corriente a nivel de piso
 Jave = np.mean(Ji)
@@ -640,7 +665,7 @@ plt.title('Campo electrostático libre de iones', fontsize=15)
 plt.xlabel('Distancia horizontal (m)',fontsize=11)
 plt.ylabel('Distancia vertical (m)',fontsize=11)
 plt.tight_layout()
-'''
+
 plt.figure(10)
 #plt.figure(figsize=(6, 6))
 #plt.contourf(X, Y, Vm, levels=200, cmap='plasma')
@@ -655,7 +680,7 @@ plt.xlabel('Distancia horizontal (m)',fontsize=11)
 plt.ylabel('Distancia vertical (m)',fontsize=11)
 plt.title('Potencial electrostático', fontsize=15)
 plt.tight_layout()
-'''
+
 fig, ax = plt.subplots(num=4)
 cmap = plt.get_cmap("coolwarm")  # Mapa de color con tonos fríos y cálidos
 # La norma SymLogNorm define la escala logarítmica simétrica alrededor de cero
@@ -775,3 +800,4 @@ plt.legend([f'$|E|_a$ = {str(np.round(np.mean(Ei/1000),3))} kV'])
 plt.grid(True)
 
 plt.show()
+'''
