@@ -4,6 +4,14 @@ import math as ma
 from matplotlib.colors import LogNorm
 from matplotlib.colors import SymLogNorm
 import matplotlib.colorbar as cbar
+from matplotlib.colors import Normalize
+
+
+'''
+Implementa  un algoritmoque primero resuelva en toda la malla la distribucion de las densidad de carga de uno de los polos
+y luego, usando esa distribución, resolver para la densidad del otro polo.
+'''
+
 plt.close('all')
 ################################
 ## Parámetros genericos
@@ -43,7 +51,7 @@ def windDist(wndx, wndy, hr, y, alpha, uni):
 # Sy = 2H
 Sx = 60 # (m) media longitud del plano de tierra 
 Sy = 70 # (m) altura del área de estudio respecto de tierra
-l = 0.3 # (m) distancia desde el suelo a la altura de interés de influencia de campo
+l = 1 # (m) distancia desde el suelo a la altura de interés de influencia de campo
 ## Definición coordenadas conductores caso bipolar
 #coordenada = [(6,7), (-6,7)] # (m) coordenadas cargas en posición de los conductores
 x_coor1 = -20
@@ -58,15 +66,17 @@ w = np.array([x for x,y in coordenada]) # (m) anchos de los conductores
 #Ver = 1 # (m) Altura donde interesa medir el campo eléctrico
 Tol = 10**(-4)
 con = 0
-max_iter_rho = 800
-max_iter = 1000
+max_iter_rho = 300
+max_iter = 500
 nodosx = 100
 nodosy = 100
-windx = np.ones((nodosx, nodosy)) * wndx
-windy = np.ones((nodosx, nodosy)) * wndy
 # Definir coordenadas de la malla en x y y
 x = np.linspace(-Sx, Sx, nodosy)
 y = np.linspace(Sy, 0, nodosx)
+X,Y =np.meshgrid(x,y)
+wndx1 = np.ones((nodosy, nodosx)) * wndx
+wndy1 = np.ones((nodosy, nodosx)) * wndy
+windx, windy = windDist(wndx1, wndy1, l, Y, 0.1, 0) # Se calcula la distribución de viento
 dx = np.abs(x[1] - x[0])
 dy = np.abs(y[1] - y[0])
 
@@ -189,14 +199,43 @@ def calcular_potencial_con_borde_vectorizado(E_x, E_y, dx, dy):
 #def rhoA(Sx, Jp, b, a,  m_ind, d,I2l):
 #rho_ip = (I2l)*10**(-3)/(np.pi*b[0]*(100*a[0])*m_ind[0]*(30*d + 9*np.sqrt(d/(100*a[0])))) # radio está en cm
     #rho_in = -(Sx*Jp-I2l/2)*10**(-3)/(np.pi*b[1]*(100*a[1])*m_ind[1]*(30*d + 9*np.sqrt(d/(100*a[1])))) # radio está en cm
+
+
+def visualizar_evolucion(X, Y, rho1_historial, titulo_base="Evolución densidad de carga", figura_num=15, pausa=0.05):
+    """
+    Función para animar la evolución de una matriz a lo largo de iteraciones.
+
+    Parámetros:
+    - X, Y: Coordenadas de la malla.
+    - rho1_historial: Lista de matrices que representan la evolución de la densidad de carga.
+    - titulo_base: Título base para el gráfico.
+    - pausa: Tiempo de pausa entre cada cuadro de la animación (en segundos).
+    """
+    #assert len(rho1_historial)>=0, 'No se tiene una lista de mapas para graficar'
+    if rho1_historial is not None:
+        plt.figure(figura_num)  # Especificar el número de la figura
+        fig, axis = plt.subplots(num=figura_num)  # Asegura que se use esa figura
+        # Configurar el primer frame
+        pcm = axis.pcolormesh(X, Y, np.real(rho1_historial[0]), cmap='viridis', shading='auto', norm=LogNorm())
+        cbar = plt.colorbar(pcm, ax=axis)
+        cbar.set_label(r'Densidad de carga $C/m^3$', fontsize=11)
+        # Iterar sobre el historial para actualizar la animación
+        for i, rho in enumerate(rho1_historial):
+            pcm.set_array(np.real(rho).ravel())
+            axis.set_title(f"{titulo_base} - Iteración: {i + 1}")
+            plt.draw()
+            plt.pause(pausa)
+        plt.show()
+
+
 def rhoA(Ey,D, ep0, V0_p,V0_s, V, Ecrit_p,Ecrit_s, R):    
     '''
     Ey: Campo  de carga libre en medio camino entre los dos conductores
     Ecrit_p,_s:  Campo gradiente corona para conductor positivo y negativo
-    V0_p,_s: Voltajes de gradientecorona  en los conductores positivosy negativos, estos incluyen al factor de rugosidad
+    V0_p,_s: Voltajes de gradiente corona  en los conductores positivosy negativos, estos incluyen al factor de rugosidad
     '''
     rho_ip = Ey*D*8*ep0*V0_p*(V[0]-V0_p)/(Ecrit_p*R[0]*D**2*V[0]*(5-4*V0_p/V[0]))
-    rho_in = Ey*D*8*ep0*V0_s*(V[1]-V0_s)/(Ecrit_s*R[1]*D**2*V[1]*(5-4*V0_p/V[1]))
+    rho_in = -Ey*D*8*ep0*V0_s*(V[1]-V0_s)/(Ecrit_s*R[1]*D**2*V[1]*(5-4*V0_p/V[1]))
     return rho_ip, rho_in # Entrega condiciones de borde del condcutor positivo y negativo respectivamente
 '''
 y_p = np.zeros_like(Y)
@@ -209,7 +248,7 @@ y_p[(nodosy-indices_sup):,:] = Y[(indices_inf-len(y_p[(nodosy-indices_sup):,0]))
 #y_f[indices_inf:,:] = Y[(indices_inf-(nodosy-2)):indices_inf,:]
 #Ya = (np.flip(Y)-(Sy-y_coor))
 def potencial_electrostático(f_point, f_value, X, Y, radio, ind, carga=None):
-    Vm = np.zeros((nodosx,nodosy))
+    Vm = np.zeros((nodosy,nodosx))
     Vm2 = Vm.copy()
     ## Condiciones de borde potencial inicial
     for g in range(len(f_point)):
@@ -218,12 +257,12 @@ def potencial_electrostático(f_point, f_value, X, Y, radio, ind, carga=None):
         Vm2[f_point[g]] = f_value[g]
         Vm2[-1,:] = 0 # borde inferior
     if carga is not None:
-        print(carga)
+        #print(carga)
         for z in range(len(carga)):
             # Calcular la distancia entre cada punto de la malla y el punto (w, h)
             Mod_coor = np.sqrt((X - w[z])**2 + (Y - h[z])**2)
             Mod_coor2 = np.sqrt((X - w[z])**2 + (Y + h[z])**2)
-            print(Mod_coor)
+            #print(Mod_coor)
             # Calcular el potencial eléctrico en cada nodo de la malla
             #Vm += carga[z] * 0.5 * K*(1/Mod_coor - 1/Mod_coor2)
             Vm += carga[z]*K*(np.log(1/Mod_coor) - np.log(1/Mod_coor2))
@@ -248,18 +287,22 @@ def resuelve2(a, b, c, d, g, f):
     B2 = f*(2*d-g*b/a)+2*c*g**2
     C2 = f**2
     Gr = (-B2 + np.sqrt(B2**2-4*A2*C2+0j))/(2*A2)
-    ysol = np.abs(np.sqrt(Gr))
+    ysol = np.sqrt(Gr)
     Gy = (b*ysol)**2 - 4*a*c
-    xsol = np.abs((-b*ysol + np.sqrt(Gy+0j))/(2*a))
+    xsol = (-b*ysol + np.sqrt(Gy+0j))/(2*a)
     return xsol,ysol
+
+
 
 # Función para actualizar rho utilizando operaciones vectorizadas
 # utiliza Gaus-Seidel donde utiliza el mismo valor actualizado para hacer la operación en el nodo adyacente
-def update_rho_vectorized(rhoinip, rhoinin, Ex, Ey, dx, dy, epsilon0, wx, wy, rho_boundp, rho_boundn):
+def update_rho_vectorized(rhoinip, rhoinin, Ex, Ey, dx, dy, epsilon0, wx, wy, rho_boundp, rho_boundn, met=0):
     # Aquí hace falta copiar los rhop y rhon por lo que debo integrarlos en los parámetros de estas función.
     #rho_new = np.copy(rho)
     rhop = rhoinip.copy()
     rhon = rhoinin.copy()
+    rhop = rhop.astype(complex)
+    rhon = rhon.astype(complex)
     rhop[fixed_point[0]] = rho_boundp[fixed_point[0]]  # Mantener la condición en el o los puntos centrales
     rhop[-1, :] = rho_boundp[-1,:]  # Mantener la condición en el borde inferior
     rhon[fixed_point[1]] = rho_boundn[fixed_point[1]]  # Mantener la condición en el o los puntos centrales
@@ -279,9 +322,12 @@ def update_rho_vectorized(rhoinip, rhoinin, Ex, Ey, dx, dy, epsilon0, wx, wy, rh
     d = movn/epsilon0
     g = Rep/ele - movn/epsilon0
     f = -(d_rho_dxn*Ewxn[1:-1,1:-1] + d_rho_dyn*Ewyn[1:-1,1:-1])
-    rp, rn = resuelve2(a,b,c,d,g,f)
-    rhop[1:-1,1:-1] = rp
-    rhon[1:-1,1:-1] = rn
+    if met==0:
+        rp, rn = resuelve2(a,b,c,d,g,f)
+        rhop[1:-1,1:-1] = rp
+        rhon[1:-1,1:-1] = rn
+    elif met==1:
+        rp_p, rp_n = resuelve1(a, b , c)
     '''
     # Ecuación diferencial discretizada en el interior
     G = -epsilon0 * (Ewx[1:-1, 1:-1] * d_rho_dx + Ewy[1:-1, 1:-1] * d_rho_dy)
@@ -369,10 +415,11 @@ def convergencia(ro1,ro0, tol):
 # Algoritmo iterativo para resolver rho
 # Em base a la malla de potencial V que exista,calcula rho donde los campos eléctricos 
 # son calculados en base a -\nabla V
+'''
 def algoritmo_rho_v(V, rho_ini, dx, dy, windx, windy,max_iter_rho, Jplatep, Jplaten, rho_A):
     conv = 0
-    rho_bp =np.zeros((nodosx,nodosy))
-    rho_bn =np.zeros((nodosx,nodosy))
+    rho_bp =np.zeros((nodosx,nodosy), dtype=complex)
+    rho_bn =np.zeros((nodosx,nodosy), dtype=complex)
     # En un comienzo se tiene el campo eléctrico electrostático
     Exxi, Eyyi, Em = calcular_campo_electrico(V, dx, dy)
     # Se define a la malla rho_b con las condiciones de borde
@@ -382,6 +429,7 @@ def algoritmo_rho_v(V, rho_ini, dx, dy, windx, windy,max_iter_rho, Jplatep, Jpla
     rho_bp[-1,:] = Jplatep/(movp*np.sqrt(np.abs((Eyyi[-1,:]+windy[-1,:]/movp)**2))) # se postula que la dirección de E será solamente vertical
     rho_bn[-1,:] = Jplaten/(movn*np.sqrt(np.abs((Eyyi[-1,:]+windy[-1,:]/movn)**2)))
     rho1 = rho_ini.copy() # Parte con una distribución con ceros y las condiciones de borde, luego se actulizan los valores
+    rho1 = rho1.astype(complex)
     for iteration in range(max_iter_rho):
         rho0 = rho1.copy()
         if iteration == 0:
@@ -396,8 +444,145 @@ def algoritmo_rho_v(V, rho_ini, dx, dy, windx, windy,max_iter_rho, Jplatep, Jpla
             #print(f"Convergencia para rho alcanzada en la iteración {iteration}")
             break
     #print(r'Tolerancia rho_1 = '+str(diff))
-    return rho1, rho1p, rho1n
-    
+    return np.real(rho1), np.real(rho1p), np.real(rho1n)
+'''
+################################################################
+################################################################
+def algoritmo_rho(V, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='si', rho_h=None):
+    '''
+    Algoritmo principal de resolución del sistema de ecuaciones de la densidad de cara positiva y negativa
+    Comienza con la fijacion de la distribucion de rho- como valores nulos excepto en el conductor negativo
+    Actuliza los valores de rho+ y una vez resuelto, actuliza los valores de rho- con rho+ fijo
+    Entrega las partes reales de rho+, rho- y rho+-rho- 
+    V: potencial existente, se usa para el cálculo del campo eleçtrico
+    rho_ini: matriz con las dimensiones (ny, nx), sirve de referencia para crear rho+ y rho-
+    val_cond: arreglo con las condiciones de borde de conductor positivo y negativo
+    pos: arreglo de las posiciones de los condcutores
+    '''
+    val1 = val_cond[0]
+    val2 = val_cond[1]
+    py1, px1 = pos[0]
+    py2, px2 = pos[1]
+    rhop_0 = rho_inip.copy()
+    rhop_0= rhop_0.astype(complex)
+    rhon_0 = rho_inin.copy()
+    rhon_0= rhon_0.astype(complex)
+    rhop_0 =impone_BC(rhop_0, rho_b, val1, px1, py1, in_cond=condi, copia=copia) # rhop_0 sería una red con condición de borde unicamente en la posición del conductor
+    rhon_0 =impone_BC(rhon_0, rho_b, val2, px2, py2, in_cond=condi, copia=copia) # rhon_0 sería una red con condición de borde unicamente en la posición del conductor
+    if rho_h is not None:
+        rhop_hist = [rhop_0.copy()]
+        rhon_hist = [rhon_0.copy()]
+    else:
+        rhop_hist = None
+        rhon_hist = None
+    Ex, Ey, Em = calcular_campo_electrico(V, dx, dy)
+    Ewxp = Ex*movp + wx
+    Ewyp = Ey*movp + wy
+    Ewxn = Ex*movn - wx
+    Ewyn = Ey*movn - wy
+    a = movp/epsilon0
+    b = Rep/ele - movp/epsilon0
+    d = movn/epsilon0
+    g = Rep/ele - movn/epsilon0
+    rhon_updated, rnhist = iteraciones_rho(max_iter_rho, dx, dy, Ewxn, Ewyn, rhon_0, rhop_0, rho_b, val2, px2, py2, d, g, fac_c=-1,
+                                            sig=-1, condi=condi, copia=copia, rho_hist=rhon_hist)
+    rhop_updated, rphist = iteraciones_rho(max_iter_rho, dx, dy, Ewxp, Ewyp, rhop_0, rhon_updated, rho_b, val1, px1, py1, a, b, fac_c=1,
+                                            sig=1, condi=condi, copia=copia, rho_hist=rhop_hist)
+    rho_total = rhop_updated + rhon_updated
+    visualizar_evolucion(X, Y, rnhist, titulo_base='Evolución densidad  de carga negativa', figura_num=16)
+    visualizar_evolucion(X, Y, rphist, titulo_base='Evolución densidad  de carga positiva', figura_num=15)
+    return np.real(rhop_updated), np.real(rhon_updated), np.real(rho_total)
+
+
+def iteraciones_rho(iteraciones, dx, dy, Ewx, Ewy, rho_iterado, rho_fijo, rho_b, val, px, py, A, B, fac_c=1, sig=1, condi = 'si',
+                     copia='si', rho_hist=None):
+    '''
+    Resuelve de manera iterativa la ecuación cuadrática para la densidad de carga asociado a un condcutor específico.
+    Deja los bordes sin modificación.
+    Entrega la red de rho actualizado con sus valores  complejos
+    rho_iterado: es la red con los valores de rho que se desean actualizar iteradamente
+    rho_fijo: el la red de valores de rho correspondiente al conductor opuesto el cual se mantiene fijo durante todas las iteraciones
+    val: valor de la densidad de carga en el conductor iterado
+    px,py: posiciones del conductor iterado
+    fac_c: depende del tipo de conductor considerado
+    '''
+    dist_rho1 =np.zeros_like(rho_iterado)
+    dist_rho1 = dist_rho1.astype(complex)
+    for i in range(iteraciones):
+        if i == 0:
+            C = delta_Vp(fac_c, rho_iterado, Ewx, Ewy, dx, dy)
+            rhop0 = rho_iterado.copy()
+            dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, rho_fijo[1:-1, 1:-1], sig=sig)
+            dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_cond=condi, copia=copia)
+        else:
+            rhop0 = dist_rho1.copy()
+            C = delta_Vp(fac_c, dist_rho1, Ewx, Ewy, dx, dy)
+            dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, rho_fijo[1:-1, 1:-1], sig=sig)
+            dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_cond=condi, copia=copia)
+        condicion,diff = convergencia(dist_rho1, rhop0, 0.001)
+        if rho_hist is not None:
+            rho_hist.append(dist_rho1.copy())
+        #if condicion:
+        #    print(r'Convergencia alcanzada para rho_p en la iteración: '+str(i))
+        #    print(r'Diferencia relativa rho_P: '+str(diff))
+            #break
+    return dist_rho1, rho_hist
+
+def resuelve1(a, b, c, rho_fijo, sig=1):
+    B = b*rho_fijo
+    if sig>0:
+        sol1 = (-B + np.sqrt(B**2-4*a*c+0j))/(2*a)
+        return sol1
+    elif sig<0:
+        sol2 = (-B - np.sqrt(B**2-4*a*c+0j))/(2*a)
+        return sol2
+
+def delta_Vp(fac, rho_grid, ewx,ewy, dx, dy):
+    '''
+    Calcula el coeficiente constante de la ecuación de modelamiento de la densidad de carga espacial
+    fac: factor (+1 o-1) el cual es asignado segun el tipo de conductor tratado.
+    Deja  los bordes sin modificación
+    '''
+    d_rho_dx = (rho_grid[1:-1, 2:] - rho_grid[1:-1, :-2]) / (2 * dx)
+    d_rho_dy = (rho_grid[2:, 1:-1] - rho_grid[:-2, 1:-1]) / (2 * dy)
+    Coef = fac*(d_rho_dx*ewx[1:-1,1:-1] + d_rho_dy*ewy[1:-1,1:-1])
+    return Coef
+
+def impone_BC(rho_red,rho_b, valor, posx, posy, in_cond='si', copia='no'):
+    '''
+    rho_red: Malla en el cual se impone la condicion del punto
+    rho_b: Malla de referencia donde se almacena los valores de los conductores
+    valor: Valor de las densidad de carga del conductor
+    in_cond: condicional si se desea que se distribuya el valor en la periferia del conductor o bien en un único punto
+    copia: condicional si se desea copiar los valores de rho_b o no
+    '''
+    if in_cond=='si':
+        rho_red[posy, posx] = valor
+    elif in_cond=='no':
+        if copia=='no':
+            rs, rn, re, ro = val_rhoA(valor)
+        elif copia=='si':
+            rs = rho_b[posy+1, posx]
+            rn = rho_b[posy-1, posx]
+            re = rho_b[posy, posx+1]
+            ro = rho_b[posy, posx-1]
+        rho_red[posy+1, posx] = rs
+        rho_red[posy-1, posx] = rn
+        rho_red[posy, posx+1] = re
+        rho_red[posy, posx-1] = ro
+    return rho_red
+
+def val_rhoA(val):
+    r_s=val*np.cos((np.pi-np.pi)/2)
+    r_n=val*np.cos((np.pi-0)/2)
+    r_e=val*np.cos((np.pi-np.pi/2)/2)
+    r_o=val*np.cos((np.pi-np.pi/2)/2)
+    return r_s, r_n, r_e, r_o
+
+############################################################
+############################################################
+
+
 
 print('Densidad de carga preliminar alrededor del conductor calculado')
 # Mostrar la matriz en una gráfica con un mapa de colores
@@ -509,7 +694,7 @@ def algoritmo_V_rho(V, rho1, dx, dy, fd_point, fd_value, max_iter, Vb):
     Vi = V.copy()
     for iteration in range(max_iter):
         Vold = Vi.copy()
-        Vi = update_v(V, f_rhs, dx,dy,fixed_point=fd_point, fixed_value=fd_value, V_boundary=V_b, Exx=Exx,Eyy=Eyy)
+        Vi = update_v(V, f_rhs, dx,dy,fixed_point=fd_point, fixed_value=[0,0], V_boundary=V_b, Exx=Exx,Eyy=Eyy)
         condicion, diff = convergencia(V, Vold, 0.01)
         if condicion:
             #print(f"Convergencia alcanzada para V en la iteración {iteration}")
@@ -532,12 +717,14 @@ Jpn = Jp - Jpp
 indice1 = (2, 3)  # Nodo en la posición (x=2, y=3) en términos de índices
 indice2 = (7, 8)  # Nodo en la posición (x=7, y=8)
 
+nod_medicion = encuentra_nodos(0,  l) # coordenadas del nodo  donde se encuentra la medición del campo eléctrico
+
 # Obtener las coordenadas físicas de los nodos
 pos_central = ((x_coor1+x_coor2)/2, (y_coor1+y_coor2)/2)
 nod_central =encuentra_nodos(pos_central[0], pos_central[1])
 # Calcular el punto central
-Ey = E[nod_central[1],nod_central[0]]
-D = np.abs(x_coor2-x_coor1)
+Ey = E[nod_central[1],nod_central[0]] # Componente vertical del campo eléctrico en punto medio entre los conductores
+D = np.abs(x_coor2-x_coor1) # distancia horizontal entre ambos conductores
 def E_onset(m, delta, a):
     '''
     a: radio conductor (m)
@@ -553,37 +740,48 @@ def V_onset(m, Ecr, a):
     Ecr: Campo crítico corona (kV/m)
     '''
     return m*a*2*Ecr*np.log(2*y_coor1/a)
-Ecritp= E_onset(mp, delta, R[0])
-Ecritn= E_onset(mn, delta, R[1])
-V0p = V_onset(mp, Ecritp, R[0])
-V0n = V_onset(mn, Ecritn, R[1])
+Ecritp= E_onset(mp, delta, R[0]) # cálcula gradiente superficial crítico polo positivo
+Ecritn= E_onset(mn, delta, R[1]) # cálcula gradiente superficial crítico polo negativo
+V0p = V_onset(mp, Ecritp, R[0]) # cálcula voltaje crítico polo positivo
+V0n = V_onset(mn, Ecritn, R[1]) # cálcula voltaje crítico polo negativo
 rho_ip, rho_in = rhoA(Ey, D, epsilon0, V0p, V0n, V, Ecritp, Ecritn, R)
-rho_inicial = np.zeros((nodosx, nodosy))
-'''
+rho_inicial = np.zeros((nodosy, nodosx),dtype=complex)
+rho_boundary = np.zeros_like(rho_inicial)
+cn_cond = 'si' # condicion de ubicar la condición  inicial de densidad de carga en la posición del conductor o bien en la periferia de este
+copiado = 'si' # condición para copiar los valores de una matriz con las condiciones de borde o bien calcularlos directamente con la función  DistVal(), si cn_cond='si' entonces copia no vale
+rho_boundary = impone_BC(rho_boundary,rho_inicial, rho_ip, posx_conductor1, posy_conductor1, in_cond=cn_cond, copia=copiado)# ubica densidad carga condc. positivo
+rho_boundary = impone_BC(rho_boundary,rho_inicial, rho_in, posx_conductor2, posy_conductor2, in_cond=cn_cond, copia=copiado)# ubica densidad carga condc. negativo
 Exxini, Eyyini, Em = calcular_campo_electrico(Vmi, dx, dy) # campo electrostático inicial
 
-rho_inicial[fixed_point[0]] = rho_ip
-rho_inicial[fixed_point[1]] = rho_in
-rho_inicial[-1,:] = Jpp/(movp*np.sqrt(np.abs((Eyyini[-1,:]+windy[-1,:]/movp)**2)))
-rho_inicial[-1,:] += Jpn/(movn*np.sqrt(np.abs((Eyyini[-1,:]-windy[-1,:]/movn)**2)))
+#rho_inicial[fixed_point[0]] = rho_ip
+#rho_inicial[fixed_point[1]] = rho_in
+#rho_inicial[-1,:] = Jpp/(movp*np.sqrt(np.abs((Eyyini[-1,:]+windy[-1,:]/movp)**2)))
+#rho_inicial[-1,:] += Jpn/(movn*np.sqrt(np.abs((Eyyini[-1,:]-windy[-1,:]/movn)**2)))
 #print(Vmi)
 Vm = Vmi.copy()
-it_global = 1
+it_global = 15
 for n in range(it_global):
     Volder = Vm.copy()
     # Parte estimando rho inicial en base a Vm inicial y rho1 que contiene las condciones de borde para rho
     # Luego, con el nuevo rho_n, calcula el potencial en el espacio en base al potencial anterior Vm
     if n==0:
-        rho_d, rho_p, rho_n = algoritmo_rho_v(Vmi, rho_inicial, dx, dy, windx, windy, max_iter_rho, Jpp, Jpn, [rho_ip, rho_in])
+        #rho_d, rho_p, rho_n = algoritmo_rho_v(Vmi, rho_inicial, dx, dy, windx, windy, max_iter_rho, Jpp, Jpn, [rho_ip, rho_in])
+        rho_p, rho_n, rho_d = algoritmo_rho(Vmi, rho_inicial, rho_inicial, rho_boundary, max_iter_rho, dx, dy, movp, movn, windx, windy,
+                                             [rho_ip, rho_in], fixed_point, condi=cn_cond, copia=copiado, rho_h=None)
     else:
-        rho_d, rho_p, rho_n = algoritmo_rho_v(Vm, rho_d0, dx, dy, windx, windy, max_iter_rho, Jpp, Jpn, [rho_ip, rho_in])
-    rho_d0 = rho_p-rho_n # LOS rho_pn son puestos en sus valores absolutos
-    Vm = algoritmo_V_rho(Vm, rho_d0, dx, dy, fixed_point, fixed_value, max_iter, Vmi)
+        #rho_d, rho_p, rho_n = algoritmo_rho_v(Vm, rho_d0, dx, dy, windx, windy, max_iter_rho, Jpp, Jpn, [rho_ip, rho_in])
+        rho_p, rho_n, rho_d = algoritmo_rho(Vmi+Vm, rho_p, rho_n, rho_boundary, max_iter_rho, dx, dy, movp, movn, windx, windy,
+                                             [rho_ip, rho_in], fixed_point, condi=cn_cond, copia=copiado, rho_h=None)
+    #rho_d0 = rho_p-rho_n # LOS rho_pn son puestos en sus valores absolutos
+    Vm = algoritmo_V_rho(Vm, rho_d, dx, dy, fixed_point, fixed_value, max_iter, Vmi)
     condicion,diff = convergencia(Vm, Volder, 0.01)
     if condicion:
         print(f"Convergencia alcanzada para V en la iteración {n}")
         print(r'Diferencia relativa V y Vold: '+str(diff))
         break
+    #else:
+    #    print(r'Diferencia relativa V y Vold: '+str(diff))
+print(r'Diferencia relativa V y Vold: '+str(diff))
 
 #for iteration in range(max_iter):
 #rho_nuevo = densidad_voltaje(Vm, rho1)
@@ -591,14 +789,13 @@ for n in range(it_global):
 print('Potencial calculado')
 ##### Cálculo de campo eléctrico definitivo
 ##### Cálculo de densidad de corriente iónica
-
-Edefx, Edefy, Edef = calcular_campo_electrico(Vm, dx, dy)
+Vol_def = Vm+Vmi
+Edefx, Edefy, Edef = calcular_campo_electrico(Vm+Vmi, dx, dy)
 Jplus = rho_p*movp*np.sqrt((Edefx+(windx/movp))**2 + (Edefy+(windy/movp))**2)
 Jdiff = rho_n*movn*np.sqrt((Edefx-(windx/movn))**2 + (Edefy-(windy/movn))**2)
-Ei = Edef[int((Sy-l)/dy),:] # Magnitud Campo eléctrico a nivel de piso
-J = Jplus + Jdiff
-Ei = Edef[int((Sy-l)/dy),:] # Magnitud Campo eléctrico a nivel de piso
-Ji = J[int((Sy-l)/dy),:] # Densidad de corriente a nivel de piso
+Ei = Edef[nod_medicion[1],:] # Magnitud Campo eléctrico a nivel de piso
+J = Jplus - Jdiff
+Ji = J[nod_medicion[1],:] # Densidad de corriente a nivel de piso
 Jave = np.mean(Ji)
 print(r'Jp promedio calculado a l=0 m: '+str(np.mean(J[-1,:])/(10**(-9)))+' nA/m^2, y a l='+str(l)+' m, Jp ='+str(Jave*(10**9))+' nA/m^2')
 print(r'Jp promedio propuesto: '+str(Jp*(10**9))+' nA/m^2')
@@ -607,197 +804,283 @@ print('Campo eléctrico y densidad de corriente iónica ya calculados')
 
 
 ######## GRAFICOS
-plt.figure(1)
-#mod = np.sqrt(U**2+Ww**2)
-plt.quiver(X, Y, U, Ww, E, cmap='plasma', scale_units='xy')
-#plt.imshow(E, cmap='viridis', interpolation='none')
-# Agregar la barra de colores
-cbar = plt.colorbar()
-cbar.set_label(r'Magnitud campo eléctrico $kV/m$', fontsize=11)
-# Obtén los ticks actuales
-ticks = cbar.get_ticks()
-# Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-cbar.set_ticks(ticks)
-cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
-# Mostrar el gráfico
-plt.title('Campo electrostático libre de iones', fontsize=15)
-plt.xlabel('Distancia horizontal (m)',fontsize=11)
-plt.ylabel('Distancia vertical (m)',fontsize=11)
-plt.tight_layout()
-#plt.show()
 
 
-# Crear el gráfico usando SymLogNorm para escala logarítmica simétrica
-fig, ax = plt.subplots(num=2)
-cmap = plt.get_cmap("coolwarm")  # Mapa de color con tonos fríos y cálidos
-# La norma SymLogNorm define la escala logarítmica simétrica alrededor de cero
-norm = SymLogNorm(linthresh=0.1, linscale=0.1, vmin=Vmi.min(), vmax=Vmi.max(), base=10)
-# Graficar el mapa de colores
-c = ax.pcolormesh(X, Y, Vmi, cmap=cmap, norm=norm, shading='auto')
-# Agregar una barra de color
-cbar = fig.colorbar(c, ax=ax, extend='both', ticks=[Vmi.min(), Vmi.min()/10, Vmi.min()/100, 0, Vmi.max()/100, Vmi.max()/10, Vmi.max()])
-#cbar = plt.colorbar()
-cbar.set_label(r'Potencial $kV$')
-ticks = cbar.get_ticks()
-# Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-cbar.set_ticks(ticks)
-cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
-plt.xlabel('Distancia horizontal (m)',fontsize=11)
-plt.ylabel('Distancia vertical (m)',fontsize=11)
-plt.title('Potencial electrostático', fontsize=15)
-plt.tight_layout()
-
-
-plt.figure(3)
-#mod = np.sqrt(U**2+Ww**2)
-plt.quiver(X, Y, Exxini, Eyyini, Em, cmap='plasma', scale_units='xy')
-#plt.imshow(E, cmap='viridis', interpolation='none')
-# Agregar la barra de colores
-cbar = plt.colorbar()
-cbar.set_label(r'Magnitud campo eléctrico $kV/m$', fontsize=11)
-# Obtén los ticks actuales
-ticks = cbar.get_ticks()
-# Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-cbar.set_ticks(ticks)
-cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
-# Mostrar el gráfico
-plt.title('Campo electrostático libre de iones', fontsize=15)
-plt.xlabel('Distancia horizontal (m)',fontsize=11)
-plt.ylabel('Distancia vertical (m)',fontsize=11)
-plt.tight_layout()
-
-plt.figure(10)
-#plt.figure(figsize=(6, 6))
-#plt.contourf(X, Y, Vm, levels=200, cmap='plasma')
-plt.pcolormesh(X, Y, Vmi2, cmap='plasma', shading='auto',norm=LogNorm())
-cbar = plt.colorbar()
-cbar.set_label(r'Potencial $kV$')
-ticks = cbar.get_ticks()
-# Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-cbar.set_ticks(ticks)
-cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
-plt.xlabel('Distancia horizontal (m)',fontsize=11)
-plt.ylabel('Distancia vertical (m)',fontsize=11)
-plt.title('Potencial electrostático', fontsize=15)
-plt.tight_layout()
-
-fig, ax = plt.subplots(num=4)
-cmap = plt.get_cmap("coolwarm")  # Mapa de color con tonos fríos y cálidos
-# La norma SymLogNorm define la escala logarítmica simétrica alrededor de cero
-norm = SymLogNorm(linthresh=0.1, linscale=0.1, vmin=rho_p.min(), vmax=rho_p.max(), base=10)
-# Graficar el mapa de colores
-c = ax.pcolormesh(X, Y, rho_p, cmap=cmap, norm=norm, shading='auto')
-# Agregar una barra de color
-cbar = fig.colorbar(c, ax=ax, extend='both', ticks=[rho_d.min(), rho_p.min()/10, rho_p.min()/100, 0, rho_p.max()/100, rho_p.max()/10, rho_p.max()])
-#cbar = plt.colorbar()
-cbar.set_label(r'Densidad de carga $C/m^3$')
-ticks = cbar.get_ticks()
-# Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-cbar.set_ticks(ticks)
-plt.xlabel('Distancia horizontal (m)',fontsize=11)
-plt.ylabel('Distancia vertical (m)',fontsize=11)
-plt.title(r'Densidad de carga $\rho_+$',fontsize=15)
-plt.tight_layout()
-
-fig, ax = plt.subplots(num=5)
-cmap = plt.get_cmap("coolwarm")  # Mapa de color con tonos fríos y cálidos
-# La norma SymLogNorm define la escala logarítmica simétrica alrededor de cero
-norm = SymLogNorm(linthresh=0.1, linscale=0.1, vmin=rho_n.min(), vmax=rho_n.max(), base=10)
-# Graficar el mapa de colores
-c = ax.pcolormesh(X, Y, rho_n, cmap=cmap, norm=norm, shading='auto')
-# Agregar una barra de color
-cbar = fig.colorbar(c, ax=ax, extend='both', ticks=[rho_n.min(), rho_n.min()/10, rho_n.min()/100, 0, rho_n.max()/100, rho_n.max()/10, rho_n.max()])
-#cbar = plt.colorbar()
-cbar.set_label(r'Densidad de carga $C/m^3$')
-ticks = cbar.get_ticks()
-# Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-cbar.set_ticks(ticks)
-plt.xlabel('Distancia horizontal (m)',fontsize=11)
-plt.ylabel('Distancia vertical (m)',fontsize=11)
-plt.title(r'Densidad de carga final $\rho_-$',fontsize=15)
-plt.tight_layout()
-
-
-#plt.figure(4)
-fig, ax = plt.subplots(num=6)
-cmap = plt.get_cmap("coolwarm")  # Mapa de color con tonos fríos y cálidos
-# La norma SymLogNorm define la escala logarítmica simétrica alrededor de cero
-norm = SymLogNorm(linthresh=0.1, linscale=0.1, vmin=rho_d.min(), vmax=rho_d.max(), base=10)
-# Graficar el mapa de colores
-c = ax.pcolormesh(X, Y, rho_d, cmap=cmap, norm=norm, shading='auto')
-# Agregar una barra de color
-cbar = fig.colorbar(c, ax=ax, extend='both', ticks=[rho_d.min(), rho_d.min()/10, rho_d.min()/100, 0, rho_d.max()/100, rho_d.max()/10, rho_d.max()])
-#cbar = plt.colorbar()
-cbar.set_label(r'Densidad de carga $C/m^3$')
-ticks = cbar.get_ticks()
-# Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-cbar.set_ticks(ticks)
-plt.xlabel('Distancia horizontal (m)',fontsize=11)
-plt.ylabel('Distancia vertical (m)',fontsize=11)
-plt.title('Densidad de carga final',fontsize=15)
-plt.tight_layout()
-
-########## 
-#plt.figure(5)
-#plt.imshow(Vm,extent=[x[0], x[-1], y[-1], y[0]], cmap='plasma', interpolation='none',norm=LogNorm())
-#plt.pcolormesh(X, Y, Vm, cmap='plasma', shading='auto',norm=LogNorm())
-fig, ax = plt.subplots(num=7)
-cmap = plt.get_cmap("coolwarm")  # Mapa de color con tonos fríos y cálidos
-# La norma SymLogNorm define la escala logarítmica simétrica alrededor de cero
-norm = SymLogNorm(linthresh=0.1, linscale=0.1, vmin=Vm.min(), vmax=Vm.max(), base=10)
-# Graficar el mapa de colores
-c = ax.pcolormesh(X, Y, Vm, cmap=cmap, norm=norm, shading='auto')
-# Agregar una barra de color
-cbar = fig.colorbar(c, ax=ax, extend='both', ticks=[Vm.min(), Vm.min()/10, Vm.min()/100, 0, Vm.max()/100, Vm.max()/10, Vm.max()])
-#cbar = plt.colorbar()
-cbar.set_label(r'Potencial $kV$')
-ticks = cbar.get_ticks()
-# Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-cbar.set_ticks(ticks)
-cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
-plt.title('Potencial definitivo',fontsize=15) 
-plt.xlabel('Distancia horizontal (m)',fontsize=11)
-plt.ylabel('Distancia vertical (m)',fontsize=11)
-plt.tight_layout()
-#plt.show()
-
-
-
-plt.figure(8)
-#plt.quiver(Xe, Ye, Edefx[1:-1, 1:-1], Edefy[1:-1, 1:-1], Edef[1:-1, 1:-1], cmap='plasma')
-plt.quiver(X, Y, Edefx, Edefy, Edef, cmap='plasma', scale_units='xy')
-# Agregar la barra de colores
-cbar = plt.colorbar()
-cbar.set_label(r'Magnitud campo eléctrico $kV/m$', fontsize=11)
-# Obtén los ticks actuales
-ticks = cbar.get_ticks()
-# Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-cbar.set_ticks(ticks)
-cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
-# Mostrar el gráfico
-plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
-plt.ylabel(r'Distancia vertical (m)',fontsize=11)
-plt.title(r'Magnitud de campo eléctrico a nivel de suelo (V/m)', fontsize=13)
-plt.tight_layout()
-
-
-plt.figure(9)
-plt.plot(x[10:-10], Ji[10:-10]*(10**9))
-plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
-plt.ylabel(r'Densidad de corriente iónica ($nA/m^2$)',fontsize=11)
-plt.title(r'Magnitud de corriente iónica a nivel de suelo, $l=$'+str(l)+' m, $w_x=$'+str(wndx), fontsize=13)
-plt.tight_layout()
-plt.legend([f'$J_p$ = {str(np.round(Jave*(10**9),3))} $nA/m^2$'])
-plt.grid(True)
-
-plt.figure(10)
-plt.plot(x[10:-10], Ei[10:-10]/1000)
-plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
-plt.ylabel(r'Campo eléctrico (kV/m)',fontsize=11)
-plt.title(r'Magnitud de campo eléctrico a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(wndx), fontsize=13)
-plt.tight_layout()
-plt.legend([f'$|E|_a$ = {str(np.round(np.mean(Ei/1000),3))} kV'])
-plt.grid(True)
-
-plt.show()
 '''
+class AsymmetricLogNorm(Normalize):
+    def __init__(self, linthresh, vmin=None, vmax=None, base=10):
+        super().__init__(vmin, vmax)
+        self.linthresh = linthresh
+        self.base = base
+
+    def __call__(self, value, clip=None):
+        # Normalización asimétrica para valores negativos y positivos
+        result = np.zeros_like(value)
+        mask_pos = value > self.linthresh
+        mask_neg = value < -self.linthresh
+        mask_lin = ~mask_pos & ~mask_neg
+        
+        # Escalas logarítmicas
+        result[mask_pos] = np.log(value[mask_pos] / self.linthresh) / np.log(self.base)
+        result[mask_neg] = -np.log(-value[mask_neg] / self.linthresh) / np.log(self.base)
+        
+        # Escala lineal cerca de 0
+        result[mask_lin] = value[mask_lin] / self.linthresh
+        return result
+'''
+
+
+
+# Lista gráficos
+def grafE(num):
+    plt.figure(num)
+    #mod = np.sqrt(U**2+Ww**2)
+    plt.quiver(X, Y, Exxini, Eyyini, Em, cmap='plasma', scale_units='xy')
+    #plt.imshow(E, cmap='viridis', interpolation='none')
+    # Agregar la barra de colores
+    cbar = plt.colorbar()
+    cbar.set_label(r'Magnitud campo eléctrico $kV/m$', fontsize=11)
+    # Obtén los ticks actuales
+    ticks = cbar.get_ticks()
+    # Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
+    # Mostrar el gráfico
+    plt.title('Campo electrostático libre de iones', fontsize=15)
+    plt.xlabel('Distancia horizontal (m)',fontsize=11)
+    plt.ylabel('Distancia vertical (m)',fontsize=11)
+    plt.tight_layout()
+
+def grafV(num):
+    plt.figure(num)
+    # Define el límite para la transición a la escala lineal
+    linthresh = 1e+2  # Ajusta este valor según tus datos
+    # Usa SymLogNorm para manejar valores negativos y positivos
+    norm = SymLogNorm(linthresh=linthresh, vmin=Vmi.min(), vmax=Vmi.max(), base=50)
+    # Genera el gráfico
+    mesh = plt.pcolormesh(X, Y, Vmi, cmap='plasma', shading='auto', norm=norm)
+    # Añade la barra de colores
+    cbar = plt.colorbar(mesh)
+    cbar.set_label(r'Potencial $kV$')
+    # Define manualmente los ticks del colorbar, incluyendo el mínimo, el máximo y valores intermedios
+    min_val = Vmi.min()
+    max_val = Vmi.max()
+    ticks = [min_val, -linthresh, 0, linthresh, max_val]
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels([f'{tick/1000:.2f}' for tick in ticks])  # Divide por 1000 si es necesario
+    plt.xlabel('Distancia horizontal (m)', fontsize=11)
+    plt.ylabel('Distancia vertical (m)', fontsize=11)
+    plt.title('Potencial electrostático', fontsize=15)
+    plt.tight_layout()
+
+
+def grafRhop(num):
+    plt.figure(num)
+    #linthresh = 1e-8  # Ajusta según la magnitud de rho_p
+    linthresh = np.abs(min(np.abs(np.min(rho_p)), np.max(rho_p)) / 5)
+    #linthresh = abs(np.min(rho_p)) * 1
+    #norm = AsymmetricLogNorm(linthresh=linthresh, vmin=rho_p.min(), vmax=rho_p.max())
+    norm = SymLogNorm(linthresh=linthresh, vmin=rho_p.min(), vmax=rho_p.max(), base=10)
+    mesh = plt.pcolormesh(X, Y, rho_p, cmap='viridis', shading='auto', norm=norm)
+    cbar = plt.colorbar(mesh)
+    cbar.set_label(r'Densidad de carga positiva $C/m^3$', fontsize=11)
+    ticks = [rho_p.min(), -linthresh, 0, linthresh, rho_p.max()]
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels([f'{tick:.2e}' for tick in ticks])
+    plt.xlabel('Distancia horizontal (m)', fontsize=11)
+    plt.ylabel('Distancia vertical (m)', fontsize=11)
+    plt.title('Densidad de carga positiva', fontsize=15)
+    plt.tight_layout()
+
+def grafRhon(num):
+    plt.figure(num)
+    #linthresh = 1e-8  # Ajusta según la magnitud de rho_n
+    linthresh = min(np.abs(np.min(rho_n)), np.max(rho_n)) / 5
+    norm = SymLogNorm(linthresh=linthresh, vmin=rho_n.min(), vmax=rho_n.max(), base=10)
+    mesh = plt.pcolormesh(X, Y, rho_n, cmap='viridis', shading='auto', norm=norm)
+    cbar = plt.colorbar(mesh)
+    cbar.set_label(r'Densidad de carga negativa $C/m^3$', fontsize=11)
+    ticks = [rho_n.min(), -linthresh, 0, linthresh, rho_n.max()]
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels([f'{tick:.2e}' for tick in ticks])
+    plt.xlabel('Distancia horizontal (m)', fontsize=11)
+    plt.ylabel('Distancia vertical (m)', fontsize=11)
+    plt.title('Densidad de carga negativa', fontsize=15)
+    plt.tight_layout()
+
+def grafRhoT(num):
+    plt.figure(num)
+    linthresh = 1e-8  # Ajusta según la magnitud de rho_d
+    norm = SymLogNorm(linthresh=linthresh, vmin=rho_d.min(), vmax=rho_d.max(), base=10)
+    mesh = plt.pcolormesh(X, Y, rho_d, cmap='viridis', shading='auto', norm=norm)
+    cbar = plt.colorbar(mesh)
+    cbar.set_label(r'Densidad de carga total $C/m^3$', fontsize=11)
+    ticks = [rho_d.min(), -linthresh, 0, linthresh, rho_d.max()]
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels([f'{tick:.2e}' for tick in ticks])
+    plt.xlabel('Distancia horizontal (m)', fontsize=11)
+    plt.ylabel('Distancia vertical (m)', fontsize=11)
+    plt.title('Densidad de carga final', fontsize=15)
+    plt.tight_layout()
+
+def grafVf(num):
+    plt.figure(num)
+    linthresh = 1e+2  # Ajusta según la magnitud de Vm
+    norm = SymLogNorm(linthresh=linthresh, vmin=Vm.min(), vmax=Vm.max(), base=10)
+    mesh = plt.pcolormesh(X, Y, Vm, cmap='plasma', shading='auto', norm=norm)
+    cbar = plt.colorbar(mesh)
+    cbar.set_label(r'Potencial iónico $kV$')
+    ticks = [Vm.min(), -linthresh, 0, linthresh, Vm.max()]
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels([f'{tick/1000:.2f}' for tick in ticks])
+    plt.xlabel('Distancia horizontal (m)', fontsize=11)
+    plt.ylabel('Distancia vertical (m)', fontsize=11)
+    plt.title('Potencial iónico', fontsize=15)
+    plt.tight_layout()
+
+def grafVdef(num):
+    plt.figure(num)
+    linthresh = 1e+2  # Ajusta según la magnitud de Vol_def
+    norm = SymLogNorm(linthresh=linthresh, vmin=Vol_def.min(), vmax=Vol_def.max(), base=10)
+    mesh = plt.pcolormesh(X, Y, Vol_def, cmap='plasma', shading='auto', norm=norm)
+    cbar = plt.colorbar(mesh)
+    cbar.set_label(r'Potencial definitivo $kV$')
+    ticks = [Vol_def.min(), -linthresh, 0, linthresh, Vol_def.max()]
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels([f'{tick/1000:.2f}' for tick in ticks])
+    plt.xlabel('Distancia horizontal (m)', fontsize=11)
+    plt.ylabel('Distancia vertical (m)', fontsize=11)
+    plt.title('Potencial definitivo', fontsize=15)
+    plt.tight_layout()
+
+def grafEf(nm):
+    plt.figure(nm)
+    #plt.quiver(Xe, Ye, Edefx[1:-1, 1:-1], Edefy[1:-1, 1:-1], Edef[1:-1, 1:-1], cmap='plasma')
+    plt.quiver(X, Y, Edefx, Edefy, Edef, cmap='plasma', scale_units='xy')
+    # Agregar la barra de colores
+    cbar = plt.colorbar()
+    cbar.set_label(r'Magnitud campo eléctrico $kV/m$', fontsize=11)
+    # Obtén los ticks actuales
+    ticks = cbar.get_ticks()
+    # Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
+    # Mostrar el gráfico
+    plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
+    plt.ylabel(r'Distancia vertical (m)',fontsize=11)
+    plt.title(r'Campo eléctrico definitivo (V/m)', fontsize=13)
+    plt.tight_layout()
+
+def grafJ1(num):
+    plt.figure(num)
+    plt.plot(x[10:-10], Ji[10:-10]*(10**9))
+    plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
+    plt.ylabel(r'Densidad de corriente iónica ($nA/m^2$)',fontsize=11)
+    plt.title(r'Magnitud de corriente iónica a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(wndx), fontsize=13)
+    plt.tight_layout()
+    plt.legend([f'$J_p$ = {str(np.round(Jave*(10**9),3))} $nA/m^2$'])
+    plt.grid(True)
+
+def grafE1(num):
+    plt.figure(num)
+    plt.plot(x[10:-10], -Edefy[nod_medicion[1],10:-10]/1000)
+    plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
+    plt.ylabel(r'Campo eléctrico (kV/m)',fontsize=11)
+    plt.title(r'Magnitud de campo eléctrico a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(wndx), fontsize=13)
+    plt.tight_layout()
+    plt.legend([f'$|E|_a$ = {str(np.round(np.mean(Edefy/1000),3))} kV'])
+    plt.grid(True)
+
+gra = ['Eele', 'Vele', 'Rhop', 'Rhon', 'Rhof', 'Vf', 'Vdef', 'Ef', 'E1', 'J1']
+
+def show_plot(graf):
+    for i in graf:
+        if i == 'Eele':
+            grafE(1)
+        elif i == 'Vele':
+            grafV(2)
+        elif i == 'Rhop':
+            grafRhop(3)
+        elif i == 'Rhon':
+            grafRhon(4)
+        elif i == 'Rhof':
+            grafRhoT(5)
+        elif i == 'Vf':
+            grafVf(6)
+        elif i == 'Vdef':
+            grafVdef(7)
+        elif i == 'Ef':
+            grafEf(8)
+        elif i == 'J1':
+            grafJ1(9)
+            # Crear la figura
+            plt.figure(30)
+            fig = plt.figure(figsize=(12, 12))  # Tamaño ajustado para los subgráficos
+
+            # Subgráfico 1
+            ax1 = fig.add_subplot(131, projection='3d')  # 1 fila, 2 columnas, gráfico 1
+            surf1 = ax1.plot_surface(X, Y, rho_d*10**(6), cmap='viridis', edgecolor='none')
+            fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)  # Barra de color
+
+            ax1.set_title(r'Densidad de carga iónica total')
+            ax1.set_xlabel('X')
+            ax1.set_ylabel('Y')
+            ax1.set_zlabel(r'$\rho (\mu C/m^3)$')
+            # Subgráfico 2
+            ax2 = fig.add_subplot(132, projection='3d')  # 1 fila, 2 columnas, gráfico 1
+            surf2 = ax2.plot_surface(X, Y, rho_n*10**(6), cmap='viridis', edgecolor='none')
+            fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10)  # Barra de color
+
+            ax2.set_title(r'Densidad de carga iónica negativa')
+            ax2.set_xlabel('X')
+            ax2.set_ylabel('Y')
+            ax2.set_zlabel(r'$\rho (\mu C/m^3)$')
+            # Subgráfico 3
+            ax3 = fig.add_subplot(133, projection='3d')  # 1 fila, 2 columnas, gráfico 1
+            surf3 = ax3.plot_surface(X, Y, rho_p*10**(6), cmap='viridis', edgecolor='none')
+            fig.colorbar(surf3, ax=ax3, shrink=0.5, aspect=10)  # Barra de color
+
+            ax3.set_title(r'Densidad de carga iónica positiva')
+            ax3.set_xlabel('X')
+            ax3.set_ylabel('Y')
+            ax3.set_zlabel(r'$\rho (\mu C/m^3)$')
+        elif i == 'E1':
+            grafE1(10)
+        # Crear la figura
+            plt.figure(21)
+            fig = plt.figure(figsize=(12, 12))  # Tamaño ajustado para los subgráficos
+
+            # Subgráfico 1
+            ax1 = fig.add_subplot(131, projection='3d')  # 1 fila, 2 columnas, gráfico 1
+            surf1 = ax1.plot_surface(X, Y, Vmi/1000, cmap='plasma', edgecolor='none')
+            fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)  # Barra de color
+
+            ax1.set_title(r'Potencial electrostático')
+            ax1.set_xlabel('X')
+            ax1.set_ylabel('Y')
+            ax1.set_zlabel(r'$\rho (\mu C/m^3)$')
+
+            # Subgráfico 2
+            ax2 = fig.add_subplot(132, projection='3d')  # 1 fila, 3 columnas, gráfico 2
+            surf2 = ax2.plot_surface(X, Y, Vm/1000, cmap='plasma', edgecolor='none')
+            fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10)  # Barra de color
+
+            ax2.set_title('Potencial iónico')
+            ax2.set_xlabel('X')
+            ax2.set_ylabel('Y')
+            ax2.set_zlabel('V(kV)')
+
+            # Subgráfico 3
+            ax3 = fig.add_subplot(133, projection='3d')  # 1 fila, 3 columnas, gráfico 2
+            surf3 = ax3.plot_surface(X, Y, Vol_def/1000, cmap='plasma', edgecolor='none')
+            fig.colorbar(surf3, ax=ax3, shrink=0.5, aspect=10)  # Barra de color
+
+            ax3.set_title('Potencial definitivo')
+            ax3.set_xlabel('X')
+            ax3.set_ylabel('Y')
+            ax3.set_zlabel('V(kV)')
+            
+            plt.tight_layout()
+        plt.show()
+
+show_plot(gra)
