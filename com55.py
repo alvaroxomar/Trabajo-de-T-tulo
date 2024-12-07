@@ -13,7 +13,60 @@ from matplotlib.colors import LogNorm
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from scipy.ndimage import laplace
-plt.close('all')
+import json
+import sys
+
+def main():
+    # Leer los parámetros desde el string JSON
+    try:
+        params = json.loads(sys.argv[1])
+    except (IndexError, json.JSONDecodeError) as e:
+        print(f"Error al leer los parámetros: {e}")
+        return
+
+    # Validar parámetros obligatorios
+    required_params = ["R", "Vol", "x_coor", "y_coor", "Sx", "Sy", "nodosx", "nodosy"]
+    for param in required_params:
+        if param not in params or params[param] is None:
+            raise ValueError(f"El parámetro {param} es obligatorio y no puede estar vacío.")
+
+    # Configurar valores por defecto si no están presentes
+    params.setdefault("m", 1)
+    params.setdefault("Pr", 101)
+    params.setdefault("Tr", 303)
+    params.setdefault("l", 1)
+    params.setdefault("wndx", 0)
+    params.setdefault("wndy", 0)
+    params.setdefault("modo", "uniforme")
+    params.setdefault("coef_drag", 0.3)
+    params.setdefault("max_iter_rho", 400)
+    params.setdefault("max_iter", 250)
+    params.setdefault("it_global", 10)
+    params.setdefault("TolDev", 1e-2)
+    params.setdefault("visualizacion", 15)
+    params.setdefault("in_condct", "si")
+    params.setdefault("copiado", "no")
+    params.setdefault("histl", False)
+    params.setdefault("mostrar", False)
+
+    # Imprimir parámetros para verificar
+    print("Parámetros recibidos:")
+    for key, value in params.items():
+        print(f"{key}: {value}")
+
+    # Aquí iría la lógica principal de tu script
+    # Por ejemplo:
+    # resultado = calcular_algo(params)
+    # guardar_resultado(resultado)
+
+    print("¡Script ejecutado con éxito!")
+
+if __name__ == "__main__":
+    main()
+
+
+
+#plt.close('all')
 
 '''
 
@@ -326,10 +379,10 @@ def evaluar_estado(dist_rho1, rhop0, diff_list, tol, px, py, ventana=110, umbral
     # Verificar convergencia por diferencia relativa
     condicion, diff = convergencia(dist_rho1, rhop0, tol)
     # Agregar la red actual al historial (si corresponde)
-    if rho_hist is not None:
+    if rho_hist is not False:
         rho_hist.append(dist_rho1.copy())
     # Agregar la diferencia relativa a la lista histórica
-    if diff_list is not None:
+    if diff_list is not False:
         diff_list.append(diff)
     # Verificar tendencia al promedio
     tendencia, promedio, dev_dif = verificar_convergencia(diff_list, ventana, umbral_variacion)
@@ -454,7 +507,7 @@ def calcular_campo_electrico(V, dx, dy):
 # son calculados en base a -\nabla V
 #def algoritmo_rho_v(V, rho_ini, dx, dy, windx, windy, max_iter_rho, Jplate, rho_A, visu, met):
 def algoritmo_rho_V(V, rho_ini, rho_b, max_iter_rho, dx, dy, mov, wx,wy, val, pos, condi='si', copia='si',
-                     rho_h=None, visu=15, nombre=None, muestra=None, fi=30):
+                     rho_h=False, visu=15, nombre=None, muestra=False, fi=30):
     py1 ,px1 = pos
     rho1 = rho_ini.copy() # Parte con una distribución con ceros y las condiciones de borde, luego se actulizan los valores
     rho1 = rho1.astype(complex)
@@ -509,9 +562,9 @@ def algoritmo_rho_V(V, rho_ini, rho_b, max_iter_rho, dx, dy, mov, wx,wy, val, po
     #print(r'última iteración = '+str(iteration))
     difer_global.append(difer)
     '''
-    if muestra is not None:
+    if muestra is not False:
         visualizar_evolucion(X, Y, rhist, dif_list, titulo_base="Evolución densidad de carga", figura_num=visu, pausa=0.005)
-    rhist =  None
+    rhist =  False
     return np.real(rho1)
 
 
@@ -525,7 +578,7 @@ def visualizar_evolucion(X, Y, rho1_historial, list_dif, titulo_base="Evolución
     - titulo_base: Título base para el gráfico.
     - pausa: Tiempo de pausa entre cada cuadro de la animación (en segundos).
     """
-    if rho1_historial is not None:
+    if rho1_historial is not False:
         plt.figure(figura_num)  # Especificar el número de la figura
         fig, axis = plt.subplots(num=figura_num)  # Asegura que se use esa figura
         # Configurar el primer frame
@@ -556,7 +609,7 @@ def visualizar_evolucion(X, Y, rho1_historial, list_dif, titulo_base="Evolución
 # utiliza Gaus-Seidel donde utiliza el mismo valor actualizado para hacer la operación en el nodo adyacente
 #def update_rho_vectorized(rhoini, Ex, Ey, dx, dy, epsilon0, wx, wy, rho_bound, met=2):
 def update_rho_vectorized(iteraciones, dx, dy, Ewx, Ewy, rho_iterado, rho_b, val, px, py, A, B, sig=1, condi = 'si',
-                     copia='si', rho_hist=None, nombre=None, est_gra=None, fi=30):
+                     copia='si', rho_hist=False, nombre=None, est_gra=False, fi=30):
     #rho_new = np.copy(rho)
     '''
     rho = rhoini.copy()
@@ -636,7 +689,7 @@ def update_rho_vectorized(iteraciones, dx, dy, Ewx, Ewy, rho_iterado, rho_b, val
         if estado["promedio"] is not None and estado["dev_dif"] is not None:
             promedios.append(estado["promedio"])
             desviaciones.append(estado["dev_dif"])
-        if est_gra is not None:
+        if est_gra is not False:
             if estado["promedio"] is not None and estado["dev_dif"] is not None:
                 print(f'La tendencia al promedio es: {estado["tendencia"]}')
                 print(f'Promedio actual: {estado["promedio"]}')
@@ -650,7 +703,7 @@ def update_rho_vectorized(iteraciones, dx, dy, Ewx, Ewy, rho_iterado, rho_b, val
             break
         if i == iteraciones - 1:
             print(f'No hay convergencia de {nombre}: {estado["diff"]}')
-    if est_gra is not None:
+    if est_gra is not False:
         plt.figure(fi)
         plt.plot(promedios, label=f'Promedio iteración {i}')
         plt.plot(desviaciones, label=f'Desviación iteración {i}')
@@ -956,7 +1009,7 @@ def inicializar_densidad(Sx, Jp, mov, R, m, delta, nodosy, nodosx, posx_conducto
     return rho_inicial, rho_boundary, rho_i
 
 def iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, mov, windx, windy, max_iter_rho, max_iter,
-                      it_global, visu=15, con_condct='si', copiado='no', must = None, fi=30):
+                      it_global, visu=15, con_condct='si', copiado='no', must = False, fi=30):
     """Itera para calcular el potencial eléctrico y la densidad de carga."""
     Vm = np.zeros_like(Vmi)
     difer_global = []
@@ -967,7 +1020,7 @@ def iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy,
             print('Primer rho')
             rho_n = algoritmo_rho_V(
                 Vmi, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov, windx, windy, rho_i, fixed_point,
-                condi=con_condct, copia=copiado, rho_h=True, visu=visu, nombre='rho', muestra=must, fi=fi
+                condi=con_condct, copia=copiado, rho_h=False, visu=visu, nombre='rho', muestra=must, fi=fi
             )
         else:
             print(f'Comienza nueva actualización de rho número {n + 1}')
@@ -999,7 +1052,7 @@ def calcular_resultados_finales(Vm, Vmi, rho_n, dx, dy, mov, windx, windy, l):
 
 def ejecutar_algoritmo(fixed_point, fixed_value, X, Y, R, Q, Sx, mov, m, delta, nodosy, nodosx, posx_conductor, posy_conductor,
                         dx, dy, windx, windy, max_iter_rho, max_iter, it_global, l, visualizacion, Jp_inicial,
-                          tolerancia=[1-1e-5,1+1e-5], condct='si', copy='no', Muestra=None):
+                          tolerancia=[1-1e-5,1+1e-5], condct='si', copy='no', Muestra=False):
     """Ejecuta el algoritmo completo ajustando Jp hasta cumplir la condición de convergencia."""
     Jp = Jp_inicial
     convergencia_lograda = False
@@ -1047,7 +1100,7 @@ K = 1/(2*np.pi*epsilon0) # factor de multiplicación
 mov = 7*10**(-4) # (m^2/Vs)
 m = 0.7 # (AD) factor de rugosidad
 P0 =101.3 # (kPa) Presión del aire a nivel de mar
-T0 = 303 # (Kelvin) Temperatura de 25°C
+T0= 303  # (Kelvin) Temperatura de 25°C
 Pr =  90 # Presión del aire
 Tr= 290 # (Kelvin) Temperatura del sitio
 delta = Pr*T0/(P0*Tr) # () densidad del aire
@@ -1087,8 +1140,8 @@ Tolerancia = [1-TolDev, 1+TolDev] # Rango de tolerancia de Jp
 visualizacion = 15 #  número de la ventana donde se muestra la evolución de la densidad de carga
 in_condct = 'si' # Condición de que se ubica la densidad de carga alrededor del conductor o solo en un nodo central
 copiado = 'no' # Condición de que los valores sean copiados o no al momento de mantener las condiciones de borde en las mallas
-histl = None # Si se desea crear la lista de evolución de la densidad de carga
-mostrar = None # Permite mostrar los datos de la convergencia de rho inicial
+histl = False # Si se desea crear la lista de evolución de la densidad de carga
+mostrar = False # Permite mostrar los datos de la convergencia de rho inicial
 
 ###########################################################
 ##### ALGORITMO PRINCIPAL Y EJECUCIÓN
@@ -1214,21 +1267,27 @@ def grafVdef(num):
 
 def grafEf(nm):
     plt.figure(nm)
-    #plt.quiver(Xe, Ye, Edefx[1:-1, 1:-1], Edefy[1:-1, 1:-1], Edef[1:-1, 1:-1], cmap='plasma')
-    plt.quiver(X, Y, Edefx, Edefy, Edef, cmap='plasma', scale_units='xy')
+    # Graficar el campo vectorial 2D
+    # Usar Edefx, Edefy para las componentes del campo eléctrico
+    # Edef para la magnitud, para mapear colores en las flechas
+    Q=plt.quiver(X, Y, Exxini, Eyyini, Em, cmap='plasma', scale_units='xy', angles='xy')
+    #Q = plt.quiver(X, Y, Edefx, Edefy, Edef, cmap='plasma', scale_units='xy', angles='xy', scale=1)
     # Agregar la barra de colores
-    cbar = plt.colorbar()
-    cbar.set_label(r'Magnitud campo eléctrico $kV/m$', fontsize=11)
+    cbar = plt.colorbar(Q)
+    cbar.set_label(r'Magnitud campo eléctrico $(kV/m)$', fontsize=11)
     # Obtén los ticks actuales
     ticks = cbar.get_ticks()
-    # Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
+    # Cambiar las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
     cbar.set_ticks(ticks)
     cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
-    # Mostrar el gráfico
-    plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
-    plt.ylabel(r'Distancia vertical (m)',fontsize=11)
-    plt.title(r'Magnitud de campo eléctrico a nivel de suelo (V/m)', fontsize=13)
+    # Mostrar etiquetas y título
+    plt.xlabel(r'Distancia horizontal (m)', fontsize=11)
+    plt.ylabel(r'Distancia vertical (m)', fontsize=11)
+    plt.title(r'Magnitud de campo eléctrico a nivel de suelo $(V/m)$', fontsize=13)
+    # Ajustar la disposición para evitar que los textos se solapen
     plt.tight_layout()
+    plt.show()
+
 
 def grafJ1(num):
     plt.figure(num)
@@ -1249,6 +1308,10 @@ def grafE1(num):
     plt.tight_layout()
     plt.legend([f'$|E|_a$ = {str(np.round(np.mean(Ei/1000),3))} kV'])
     plt.grid(True)
+
+
+    
+
 
 
 
@@ -1277,56 +1340,50 @@ def show_plot(graf):
             grafVf(5)
         elif i == 'Vdef':
             grafVdef(6)
-            # Crear la figura
-            #plt.figure(20)
-            fig = plt.figure(figsize=(12, 12))  # Tamaño ajustado para los subgráficos
-
-            # Subgráfico 1
-            ax1 = fig.add_subplot(221, projection='3d')  # 1 fila, 2 columnas, gráfico 1
-            surf1 = ax1.plot_surface(X, Y, rho_n*10**(6), cmap='viridis', edgecolor='none')
-            fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)  # Barra de color
-
-            ax1.set_title(r'Densidad de carga iónica')
-            ax1.set_xlabel('X')
-            ax1.set_ylabel('Y')
-            ax1.set_zlabel(r'$\rho (\mu C/m^3)$')
-
-            # Subgráfico 2
-            ax2 = fig.add_subplot(222, projection='3d')  # 1 fila, 3 columnas, gráfico 2
-            surf2 = ax2.plot_surface(X, Y, Vmi/1000, cmap='plasma', edgecolor='none')
-            fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10)  # Barra de color
-
-            ax2.set_title('Potencial electrostático')
-            ax2.set_xlabel('X')
-            ax2.set_ylabel('Y')
-            ax2.set_zlabel('V(kV)')
-
-            # Subgráfico 3
-            ax3 = fig.add_subplot(223, projection='3d')  # 1 fila, 3 columnas, gráfico 2
-            surf3 = ax3.plot_surface(X, Y, Vm/1000, cmap='plasma', edgecolor='none')
-            fig.colorbar(surf3, ax=ax3, shrink=0.5, aspect=10)  # Barra de color
-
-            ax3.set_title('Potencial iónico')
-            ax3.set_xlabel('X')
-            ax3.set_ylabel('Y')
-            ax3.set_zlabel('V(kV)')
-            # Subgráfico 4
-            ax4 = fig.add_subplot(224, projection='3d')  # 1 fila, 3 columnas, gráfico 3
-            surf4 = ax4.plot_surface(X, Y, Vol_def/1000, cmap='plasma', edgecolor='none')
-            fig.colorbar(surf4, ax=ax4, shrink=0.5, aspect=10)  # Barra de color
-
-            ax4.set_title('Potencial definitivo')
-            ax4.set_xlabel('X')
-            ax4.set_ylabel('Y')
-            ax4.set_zlabel('V(kV)')
-            plt.tight_layout()
         elif i == 'Ef':
-            grafEf(8)
+            grafEf(7)
         elif i == 'J1':
             grafJ1(9)
         elif i == 'E1':
             grafE1(10)
-        plt.show()
+            fig = plt.figure(figsize=(12, 12))  # Tamaño ajustado para los subgráficos
+            # Subgráfico 1: Densidad de carga iónica
+            ax1 = fig.add_subplot(221, projection='3d')
+            surf1 = ax1.plot_surface(X, Y, rho_n * 10**6, cmap='viridis', edgecolor='none')
+            fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)
+            ax1.set_title(r'Densidad de carga iónica')
+            ax1.set_xlabel('X')
+            ax1.set_ylabel('Y')
+            ax1.set_zlabel(r'$\rho (\mu C/m^3)$')
+            # Subgráfico 2: Potencial electrostático
+            ax2 = fig.add_subplot(222, projection='3d')
+            surf2 = ax2.plot_surface(X, Y, Vmi / 1000, cmap='plasma', edgecolor='none')
+            fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10)
+            ax2.set_title('Potencial electrostático')
+            ax2.set_xlabel('X')
+            ax2.set_ylabel('Y')
+            ax2.set_zlabel('V(kV)')
+            # Subgráfico 3: Potencial iónico
+            ax3 = fig.add_subplot(223, projection='3d')
+            surf3 = ax3.plot_surface(X, Y, Vm / 1000, cmap='plasma', edgecolor='none')
+            fig.colorbar(surf3, ax=ax3, shrink=0.5, aspect=10)
+            ax3.set_title('Potencial iónico')
+            ax3.set_xlabel('X')
+            ax3.set_ylabel('Y')
+            ax3.set_zlabel('V(kV)')
+            # Subgráfico 4: Potencial definitivo
+            ax4 = fig.add_subplot(224, projection='3d')
+            surf4 = ax4.plot_surface(X, Y, Vol_def / 1000, cmap='plasma', edgecolor='none')
+            fig.colorbar(surf4, ax=ax4, shrink=0.5, aspect=10)
+            ax4.set_title('Potencial definitivo')
+            ax4.set_xlabel('X')
+            ax4.set_ylabel('Y')
+            ax4.set_zlabel('V(kV)')
+            # Ajustar diseño
+            plt.tight_layout()
+        # Renderiza cada gráfico y continúa al siguiente
+        plt.pause(0.1)  # Pausa breve para que el gráfico se renderice
+    plt.show()
     
 
  
