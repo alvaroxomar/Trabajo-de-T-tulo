@@ -10,6 +10,9 @@ from scipy.interpolate import griddata
 '''
 Implementa  un algoritmoque primero resuelva en toda la malla la distribucion de las densidad de carga de uno de los polos
 y luego, usando esa distribución, resolver para la densidad del otro polo.
+
+
+AUN QUEDA PENDIENTE DECIDIR CUAL METODO USAR PARA HACER CONVERGER LAS DENSIDADESDE CARGA
 '''
 
 plt.close('all')
@@ -226,11 +229,11 @@ def potencial_electrostático(f_point, f_value, X, Y, radio, ind, carga=None, st
     ## Condiciones de borde potencial inicial
     Vm[-1,:] = 0 # borde inferior
     for g in range(len(f_point)):
-        py, px = f_point[g]
+        py, px = f_point[g] # ubica el voltaje en el nodo de posición central del conductor
         Vm[py,px] = f_value[g]
         Vm2[f_point[g]] = f_value[g]
         Vm2[-1,:] = 0 # borde inferior
-        Vm = impone_BC(Vm, Vm, f_value[g], px, py, in_condct=st, copia=copiado)
+        Vm = impone_BC(Vm, Vm, f_value[g], px, py, in_condct=st, copia=copiado) # por defecto, ubica al voltaje en 5 nodos,uno central y 4 que lo  rodean
     if carga is not None:
         #print(carga)
         for z in range(len(carga)):
@@ -253,10 +256,10 @@ def potencial_electrostático(f_point, f_value, X, Y, radio, ind, carga=None, st
     for g in range(len(f_point)):
         py, px= f_point[g]
         Vm[f_point[g]] = f_value[g]
-        Vm[-1,:] = 0 # borde inferior
         Vm2[f_point[g]] = f_value[g]
         Vm2[-1,:] = 0 # borde inferior
         Vm = impone_BC(Vm, Vm, f_value[g], px, py, in_condct=st, copia=copiado)
+    Vm[-1,:] = 0 # borde inferior
     return Vm,Vm2
 
 def resuelve2(a, b, c, d, g, f):
@@ -504,7 +507,7 @@ def algoritmo_rho_v(V, rho_ini, dx, dy, windx, windy,max_iter_rho, Jplatep, Jpla
 '''
 ################################################################
 ################################################################
-def algoritmo_rho(V, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='si',
+def algoritmo_rho(V, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='no',
                    rho_h=False, visu=15, muestra=False, fi=30):
     '''
     Algoritmo principal de resolución del sistema de ecuaciones de la densidad de cara positiva y negativa
@@ -527,6 +530,20 @@ def algoritmo_rho(V, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn
     rhop_0 =impone_BC(rhop_0, rho_b, val1, px1, py1, in_condct=condi, copia=copia) # rhop_0 sería una red con condición de borde unicamente en la posición del conductor
     rhon_0 =impone_BC(rhon_0, rho_b, val2, px2, py2, in_condct=condi, copia=copia) # rhon_0 sería una red con condición de borde unicamente en la posición del conductor
     print(f'el máximo de rho_p es: {rhop_0[(py1,px1)]}')
+    '''
+    plt.figure(50)
+    mesh = plt.pcolormesh(X, Y, np.real(rhop_0))
+    cbar = plt.colorbar(mesh)
+    cbar.set_label('Densidad de carga pos ini')
+    plt.draw()  # Dibuja el gráfico
+    plt.figure(51)
+    mesh = plt.pcolormesh(X, Y, np.real(rhon_0))
+    cbar = plt.colorbar(mesh)
+    cbar.set_label('Densidad de carga neg ini')
+    plt.draw()  # Dibuja el gráfico
+    plt.show()
+    input("Presiona Enter para continuar...")
+    '''
     print(f'el mínimo de rho_n es: {rhon_0[(py2,px2)]}')
     if rho_h is not False:
         rhop_hist = [rhop_0.copy()]
@@ -540,15 +557,30 @@ def algoritmo_rho(V, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn
     Ewxn = Ex*movn - wx
     Ewyn = Ey*movn - wy
     a = movp/epsilon0
+    #a = 1/epsilon0
     b = Rep/ele - movp/epsilon0
     d = movn/epsilon0
+    #d = 1/epsilon0
     g = Rep/ele - movn/epsilon0
     rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho, dx, dy, Ewxp, Ewyp, rhop_0, rhon_0, rho_b, val1, px1, py1, a, b, fac_c=1,
                                             sig=1, condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi)
-    ext_rhop = extrapolate_borders(X, Y, rhop_updated.copy(), num_layers=6)
-    rhon_updated, rnhist, dif_listn = iteraciones_rho(max_iter_rho, dx, dy, Ewxn, Ewyn, rhon_0, ext_rhop, rho_b, val2, px2, py2, d, g, fac_c=-1,
+    ext_rhop = extrapolate_borders(X, Y, rhop_updated.copy(), num_layers=30)
+    rhon_updated, rnhist, dif_listn = iteraciones_rho(max_iter_rho, dx, dy, Ewxn, Ewyn, rhon_0, rhop_0, rho_b, val2, px2, py2, d, g, fac_c=-1,
                                             sig=-1, condi=condi, copia=copia, rho_hist=rhon_hist, nombre='rho_n', est_gra=muestra, fi=fi+1)
-    ext_rhon = extrapolate_borders(X, Y, rhon_updated.copy(), num_layers=6)
+    ext_rhon = extrapolate_borders(X, Y, rhon_updated.copy(), num_layers=30)
+    '''
+    rhop_updated1, rphist, dif_listp = iteraciones_rho(max_iter_rho, dx, dy, Ewxp, Ewyp, rhop_updated, rhon_updated, rho_b, val1, px1, py1, a, b, fac_c=1,
+                                            sig=1, condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi)
+    ext_rhop = extrapolate_borders(X, Y, rhop_updated1.copy(), num_layers=30)
+    rhon_updated1, rnhist, dif_listn = iteraciones_rho(max_iter_rho, dx, dy, Ewxn, Ewyn, rhon_updated, rhop_updated, rho_b, val2, px2, py2, d, g, fac_c=-1,
+                                            sig=-1, condi=condi, copia=copia, rho_hist=rhon_hist, nombre='rho_n', est_gra=muestra, fi=fi+1)
+    ext_rhon = extrapolate_borders(X, Y, rhon_updated1.copy(), num_layers=30)
+    #rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho, dx, dy, Ewxp, Ewyp, ext_rhop, ext_rhon, rho_b, val1, px1, py1, a, b, fac_c=1,
+    #                                        sig=1, condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi)
+    #ext_rhop = extrapolate_borders(X, Y, rhop_updated.copy(), num_layers=30)
+    '''
+    print(f'confirmo maximo rhop es  {rhop_updated[(py1,px1)]}')
+    print(f'confirmo minimi rhon es  {rhon_updated[(py2,px2)]}')
     rho_total = ext_rhop + ext_rhon
     visualizar_evolucion(X, Y, rnhist, dif_listp, titulo_base='carga negativa', figura_num=visu, pausa=0.005)
     visualizar_evolucion(X, Y, rphist, dif_listn, titulo_base='carga positiva', figura_num=visu+2, pausa=0.005)
@@ -575,7 +607,7 @@ def iteraciones_rho(iteraciones, dx, dy, Ewx, Ewy, rho_iterado, rho_fijo, rho_b,
     todos = False
     for i in range(iteraciones):
         if i == 0:
-            C = delta_Vp(fac_c, rho_iterado, Ewx, Ewy, dx, dy)
+            C = delta_Vp(fac_c, rho_iterado, Ewx, Ewy, dx, dy) # toma  la red que corresponde únicamente a un conductor
             rhop0 = rho_iterado.copy()
             dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, rho_fijo[1:-1, 1:-1], sig=sig)
             dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_condct=condi, copia=copia)
@@ -666,6 +698,13 @@ def impone_BC(rho_red, rho_b, valor, posx, posy, in_condct='si', copia='no'):
         rho_red[posy-1, posx] = rn
         rho_red[posy, posx+1] = re
         rho_red[posy, posx-1] = ro
+    elif in_condct == 'noV':
+        rho_red[posy+1, posx] = valor
+        rho_red[posy-1, posx] = valor
+        rho_red[posy, posx+1] = valor
+        rho_red[posy, posx-1] = valor
+    else:
+        print('in_condct escogido es inválido')
     return rho_red
 
 def val_rhoA(val):
@@ -767,8 +806,8 @@ def apply_laplacian_asymmetric(u, dx, dy):
 
     # Aplicar la discretización asimétrica
     laplacian[1:-1, 1:-1] = (
-        (u[0:-2, 1:-1] - 2 * u[1:-1, 1:-1] + u[2:, 1:-1]) / dy2 +  # Término en x
-        (u[1:-1, 0:-2] - 2 * u[1:-1, 1:-1] + u[1:-1, 2:]) / dx2    # Término en y
+        (u[:-2, 1:-1] - 2 * u[1:-1, 1:-1] + u[2:, 1:-1]) / dy2 +  # Término en x
+        (u[1:-1, :-2] - 2 * u[1:-1, 1:-1] + u[1:-1, 2:]) / dx2    # Término en y
     )
     # Entrega red con las mismas dimensiones que u con los bordes con valores nulos
     return laplacian
@@ -839,32 +878,22 @@ def update_v(u, f_rhs, dx, dy, n_cycles=1, fixed_point=None, fixed_value=None, V
     
     return u
 
-def densidad_voltaje(Volt, rho):
-    # Calcula la densidad de cargas usando la ecuación de Poisson según el potencial ya calculado
-    Rho_new = np.zeros_like(rho)
-    Rho_new = -epsilon0*apply_laplacian_asymmetric(Volt, dx, dy)
-    Rho_new[fixed_point] = rho_i
-    Rho_new[0,:] = rho[0,:]
-    Rho_new[-1,:] = rho[-1,:]
-    Rho_new[:,0] = rho[:,0]
-    Rho_new[:,-1] = rho[:,-1]
-    return Rho_new
 # Resolver usando FMG
 # Algoritmo que obtien la red de potencial eléctrico en base a los valores de Rho
 
-def algoritmo_V_rho(V, rho1, dx, dy, fd_point, fd_value, max_iter, Vb):
+def algoritmo_V_rho(V, rho1, dx, dy, fd_point, fd_value, max_iter):
     f_rhs = funcion_f(rho1)
-    V_b =  Vb.copy()
-    Vi = V.copy()
+    #V_b =  Vb.copy()
+    #Vi = V.copy()
+    V_b = np.zeros_like(V)
     for iteration in range(max_iter):
-        Vold = Vi.copy()
-        Vi = update_v(V, f_rhs, dx,dy,fixed_point=fd_point, fixed_value=[0,0], V_boundary=V_b, Exx=None,Eyy=None)
-        condicion, diff = convergencia(V, Vold, 0.01)
+        Vold = V.copy()
+        V = update_v(V, f_rhs, dx,dy,fixed_point=fd_point, fixed_value=[0,0], V_boundary=V_b, Exx=None,Eyy=None)
+        condicion, diff = convergencia(V, Vold, 1e-6)
         if condicion:
-            #print(f"Convergencia alcanzada para V en la iteración {iteration}")
+            print(f"Convergencia alcanzada para V en la iteración {iteration}")
             break
-        V = Vi
-    return Vi
+    return V
 
 def E_onset(m, delta, a):
     '''
@@ -930,20 +959,36 @@ print('Campo eléctrico y densidad de corriente iónica ya calculados')
 def densidad_voltaje(Volt, rho, Rho_val1, Rho_val2, points, cond='si', cop='no'):
     py1, px1 = points[0]
     py2, px2 = points[1]
-    # Calcula la densidad de cargas usando la ecuación de Poisson según el potencial ya calculado
-    Rho_new = np.zeros_like(rho)
-    Rho_new = -epsilon0*apply_laplacian_asymmetric(Volt, dx, dy)
-    #Rho_new = -epsilon0*laplace(Volt)
-    Rho_new = impone_BC(Rho_new, rho, Rho_val1, px1, py1, in_condct=cond, copia=cop)
-    Rho_new = impone_BC(Rho_new, rho, Rho_val2, px2, py2, in_condct=cond, copia=cop)
-    Rho_new  = extrapolate_borders(X,Y, Rho_new)
     '''
-    Rho_new[0,:] = rho[0,:]
-    Rho_new[-1,:] = rho[-1,:]
-    Rho_new[:,0] = rho[:,0]
-    Rho_new[:,-1] = rho[:,-1]
+    print(f'pos conductor izquierdo {points[0]}')
+    print(f'pos conductor derecho {points[1]}')
     '''
-    return Rho_new
+    if len(Volt) != 2:
+        # Calcula la densidad de cargas usando la ecuación de Poisson según el potencial ya calculado
+        Rho_new = np.zeros_like(rho)
+        Rho_new = -epsilon0*apply_laplacian_asymmetric(Volt, dx, dy)
+        #Rho_new = -epsilon0*laplace(Volt)
+        Rho_new = impone_BC(Rho_new, rho, Rho_val1, px1, py1, in_condct=cond, copia=cop)
+        Rho_new = impone_BC(Rho_new, rho, Rho_val2, px2, py2, in_condct=cond, copia=cop)
+        Rho_new  = extrapolate_borders(X,Y, Rho_new)
+        '''
+        Rho_new[0,:] = rho[0,:]
+        Rho_new[-1,:] = rho[-1,:]
+        Rho_new[:,0] = rho[:,0]
+        Rho_new[:,-1] = rho[:,-1]
+        '''
+        return Rho_new
+    elif len(Volt)==2:
+        Rho_newp = np.zeros_like(rho)
+        Rho_newn = np.zeros_like(rho)
+        Rho_newp = -epsilon0*apply_laplacian_asymmetric(Volt[0], dx, dy)
+        Rho_newn = -epsilon0*apply_laplacian_asymmetric(Volt[1], dx, dy)
+        #Rho_new = -epsilon0*laplace(Volt)
+        Rho_newp = impone_BC(Rho_newp, rho, Rho_val1, px1, py1, in_condct=cond, copia=cop)
+        Rho_newn = impone_BC(Rho_newn, rho, Rho_val2, px2, py2, in_condct=cond, copia=cop)
+        Rho_newp  = extrapolate_borders(X,Y, Rho_newp)
+        Rho_newn  = extrapolate_borders(X,Y, Rho_newn)
+        return Rho_newp, Rho_newn
 
 def calcular_potencial_inicial(fixed_point, fixed_value, X, Y, R, Q, st='noV'):
     """Calcula el potencial inicial basado en el método CSM."""
@@ -960,10 +1005,20 @@ def inicializar_densidad(Ey,  diametro, R, m, delta, nodosy, nodosx, pos_conduct
     V0p = V_onset(mp, Ecritp, R[0]) # cálcula voltaje crítico polo positivo
     V0n = V_onset(mn, Ecritn, R[1]) # cálcula voltaje crítico polo negativo
     rho_ip, rho_in = rhoA(Ey, diametro, epsilon0, V0p, V0n, V, Ecritp, Ecritn, R)
+    print(f'condicion rho_p: {rho_ip}')
+    print(f'condición rho_n: {rho_in}')
     rho_inicial = np.zeros((nodosy, nodosx),dtype=complex) # Distribución inicial solo con valores nulos
     rho_boundary = np.zeros_like(rho_inicial)
-    rho_boundary = impone_BC(rho_boundary,rho_inicial, rho_in, posx2, posy2, in_condct=con_condct, copia=copiado)# ubica densidad carga condc. negativo
-    rho_boundary = impone_BC(rho_boundary,rho_inicial, rho_ip, posx1, posy1, in_condct=con_condct, copia=copiado)# ubica densidad carga condc. positivo
+    rho_boundary = impone_BC(rho_boundary,rho_inicial, rho_in, posx2, posy2, in_condct=con_condct, copia='no')# ubica densidad carga condc. negativo
+    rho_boundary = impone_BC(rho_boundary,rho_inicial, rho_ip, posx1, posy1, in_condct=con_condct, copia='no')# ubica densidad carga condc. positivo
+    # Graficar
+    plt.figure(40)
+    mesh = plt.pcolormesh(X, Y, np.real(rho_boundary))
+    cbar = plt.colorbar(mesh)
+    cbar.set_label('Densidad de carga')
+    plt.draw()  # Dibuja el gráfico
+    plt.show()
+    #input("Presiona Enter para continuar...")
     return rho_inicial, rho_boundary, rho_ip, rho_in
 
 def iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, windx, windy, max_iter_rho, max_iter,
@@ -972,21 +1027,27 @@ def iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy,
     Vm = np.zeros_like(Vmi)
     difer_global = []
     rho_ip, rho_in = rho_i
+    '''
+    print(f'rho_p  encond es: {rho_ip}')
+    print(f'rho_n  encond es: {rho_in}')
     print('Campo eléctrico  electrostático libre iones calculado')
+    '''
     for n in range(it_global):
         Volder = Vm.copy()
         if n == 0:
             print('Primer rho')
-            #rho_p, rho_n, rho_d = algoritmo_rho(
-            #    Vmi, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov, windx, windy, rho_i, fixed_point,
-            #    condi=con_condct, copia=copiado, rho_h=True, visu=visu, nombre='rho', muestra=must, fi=fi
-            #)
             rho_p, rho_n, rho_d = algoritmo_rho(Vmi, rho_inicial, rho_inicial, rho_boundary, max_iter_rho, dx, dy, movp, movn, windx, windy,
                                              [rho_ip, rho_in], fixed_point, condi=con_condct, copia=copiado, rho_h=rho_h, visu=visu, muestra=must, fi=fi)
+            #Vp =algoritmo_V_rho(Vm, rho_p, dx, dy,fixed_point[0], 0, max_iter)
+            #Vn =algoritmo_V_rho(Vm, rho_n, dx, dy,fixed_point[1], 0, max_iter)
         else:
             print(f'Comienza nueva actualización de rho número {n + 1}')
+            #rho_p, rho_n, rho_d = algoritmo_rho(Vmi+Vm, rho_p, rho_n, rho_boundary, max_iter_rho, dx, dy, movp, movn, windx, windy,
+            #                                 [rho_ip, rho_in], fixed_point, condi=con_condct, copia=copiado, rho_h=rho_h, visu=visu, muestra=must, fi=fi)
+            #rho_p, rho_n = densidad_voltaje([Vp,Vn], rho_boundary, rho_ip, rho_in, fixed_point, cond=con_condct, cop=copiado)
             rho_d = densidad_voltaje(Vm, rho_boundary, rho_ip, rho_in, fixed_point, cond=con_condct, cop=copiado)
-        Vm = algoritmo_V_rho(Vm, rho_d, dx, dy, fixed_point, 0, max_iter, Vmi)
+        Vm = algoritmo_V_rho(Vm, rho_d, dx, dy, fixed_point, 0, max_iter)
+        #rho_d = densidad_voltaje(Vm, rho_boundary, rho_ip, rho_in, fixed_point, cond=con_condct, cop=copiado)
         condicion, max_diff = convergencia(Vm, Volder, 3.1e-9)
         if condicion:
             print(f"Convergencia alcanzada para V en la iteración {n}")
@@ -994,8 +1055,9 @@ def iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy,
         else:
             print(f'Diferencia relativa V y Vold: {max_diff}')
             print('*****************************')
-    if n==it_global-1:
-        print(f'se alcanzó el máximo de iteraciones: {n}')
+        if n==it_global-1:
+            print(f'se alcanzó el máximo de iteraciones: {n}')
+    Vm = -Vm
     return Vm, rho_p, rho_n, rho_d
 
 
@@ -1008,12 +1070,13 @@ def calcular_resultados_finales(Vm, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy
     Ei = Edef[encuentra_nodos(0, l)[1],  :] # Magnitud campo eléctrico nivel de piso
     Jplus = rho_p*movp*np.sqrt((Edefx+(windx/movp))**2 + (Edefy+(windy/movp))**2)
     Jdiff = rho_n*movn*np.sqrt((Edefx-(windx/movn))**2 + (Edefy-(windy/movn))**2)
+    Jtotal = np.sqrt((rho_p*movp*(Edefx+(windx/movp))+rho_n*movn*(Edefx+(windx/movn)))**2 + (rho_p*movp*(Edefy+(windy/movp))+rho_n*movn*(Edefy+(windy/movn)))**2)
     J = Jplus + Jdiff
     Jave = np.mean(J[-1,:]) # Promedio densidad de corriente a nivel  de piso
     Ji = J[encuentra_nodos(0, l)[1], :]  # Densidad de corriente a nivel de l
     Campo_ini = [Exxini, Eyyini, Eini]
     Campo_fin = [Edefx, Edefy, Edef]
-    return Jave, Ji, Campo_ini, Campo_fin, Ei
+    return Jave, Ji, Campo_ini, Campo_fin, Ei, Jtotal
 
 #print(r'Jp promedio calculado a l=0 m: '+str(np.mean(J[-1,:])/(10**(-9)))+' nA/m^2, y a l='+str(l)+' m, Jp ='+str(Jave*(10**9))+' nA/m^2')
 #print(r'Jp promedio propuesto: '+str(Jp*(10**9))+' nA/m^2')
@@ -1029,27 +1092,25 @@ def ejecutar_algoritmo(fixed_point, diametro, fixed_value, X, Y, R, Q, mov, m, d
     pos_conductor2 =  fixed_point[1]
     print('----------------------------------')
     # Paso 1: Calcular potencial inicial
-    Vmi = calcular_potencial_inicial(fixed_point, fixed_value, X, Y, R, Q, st='noV')
+    Vmi = calcular_potencial_inicial(fixed_point, fixed_value, X, Y, R, Q, st='noV') # Ubicar en 5 nodos con el voltaje de +- en cada conductor
     Exx,  Eyy,  E = calcular_campo_electrico(Vmi, dx, dy)
-    Ey = E[nod_central[1],nod_central[0]] # Componente vertical del campo eléctrico en punto medio entre los conductores
-
+    Ey = E[nod_central[1],nod_central[0]] # Componente vertical del campo eléctrico en punto medio entre los conductores, necesario  para cb carga en conductor
     # Paso 2: Inicializar densidades
     rho_inicial, rho_boundary, rho_ip, rho_in = inicializar_densidad(Ey,  diametro, R, m, delta, nodosy, nodosx, pos_conductor1,
                                                              pos_conductor2, con_condct=condct, copiado=copy)
     # Paso 3: Iterar para calcular Vm y rho
-    #Vm, rho_d = iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, mov, windx, windy, max_iter_rho, max_iter,
-    #                                it_global, visu=visualizacion, con_condct=condct, copiado=copy, must=Muestra, fi = fi)
     Vm, rho_p, rho_n, rho_d = iterar_potencial(Vmi, rho_inicial, rho_boundary, [rho_ip, rho_in], fixed_point, dx, dy, windx, windy,
                                                 max_iter_rho, max_iter, it_global, rho_h=rho_h, visu=visualizacion, con_condct=condct, copiado=copy, must = Muestra, fi=fi)
     #fi += 1
     visualizacion += 2
     # Paso 4: Calcular resultados finales
     Vol_def = Vm+Vmi
-    Jave, Ji, Campo_ini, Campo_fin, Ei = calcular_resultados_finales(Vm, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l)
+    Jave, Ji, Campo_ini, Campo_fin, Ei , Jtot= calcular_resultados_finales(Vm, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l)
+    '''
     print(f'Jp promedio calculado: {Jave * 1e9} nA/m^2')
     #print(f'Jp promedio propuesto: {Jp * 1e9} nA/m^2')
     cont += 1
-    '''
+    
     if (Jave / Jp) <= tolerancia[1] and (Jave / Jp) >= tolerancia[0]:
         convergencia_lograda = True
         print('Convergencia alcanzada!')
@@ -1060,8 +1121,9 @@ def ejecutar_algoritmo(fixed_point, diametro, fixed_value, X, Y, R, Q, mov, m, d
         print('Hubieron {10} iteraciones sin conseguir el mismo Jp')
     else:
         print('Algoritmo completado con éxito.')
+    
     '''
-    return Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Ji, Jave
+    return Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Ji, Jave, Jtot
 
 
 #############################
@@ -1072,12 +1134,12 @@ Rp = 10 * 10**(-2) # (m) radio equivalente del conductor positivo
 Rn = 10 * 10**(-2) # (m) radio equivalente del conductor negativo
 R = [Rp, Rn]
 epsilon0 = (1/(36*np.pi)) * 10**(-9) # (F/m) permitividad del vacío
-Vol1 = 300000 # (V) voltaje de la línea
-Vol2 = -300000 # V
-ele = -1.6021*10**(-19) # (C) carga del electrón
+Vol1 = 400000 # (V) voltaje de la línea
+Vol2 = -400000 # V
+ele = 1.6021*10**(-19) # (C) carga del electrón
 K = 1/(2*np.pi*epsilon0) # factor de multiplicación
-movp = 1.5*10**(-4) # (m^2/Vs) movilidad iones positivos
-movn = 2*10**(-4) # (m^2/Vs) movilidad iones negativos
+movp = 3*10**(-4) # (m^2/Vs) movilidad iones positivos
+movn = 5*10**(-4) # (m^2/Vs) movilidad iones negativos
 mov = [movp, movn]
 mp = 0.85 # (AD) factor de rugosidad conductor positivo
 mn = 0.85 # (AD) factor de rugosidad conductor negativo
@@ -1089,9 +1151,9 @@ T0 = 303 # (Kelvin) Temperatura de 25°C
 Pr =  90 # Presión del aire
 Tr= 290 # (Kelvin) Temperatura del sitio
 delta = Pr*T0/(P0*Tr) # () densidad del aire
-x_coor1 = -10
+x_coor1 = -6
 y_coor1 = 20
-x_coor2 = 10
+x_coor2 = 6
 y_coor2 = 20
 dia = np.abs(x_coor1-x_coor2)
 l=1 # (m) altura  de medición de campos
@@ -1099,9 +1161,9 @@ fixed_value1 = Vol1
 fixed_value2 = Vol2
 
 # Discretización
-Sx = None # (m) media longitud del plano de tierra 
-Sy = None # (m) altura del área de estudio respecto de tierra
-nodosy, nodosx = 400, 500 # número de nodos en ambas dimensiones
+Sx = 15 # (m) media longitud del plano de tierra 
+Sy = 35 # (m) altura del área de estudio respecto de tierra
+nodosy, nodosx = None, None # número de nodos en ambas dimensiones
 # Definir coordenadas de la malla en x y y
 x,y, nodosx, nodosy, Sx, Sy = discretiza(Rp, x_coor2, y_coor2, nodox=nodosx, nodoy=nodosy, sx=Sx, sy=Sy)  
 X,Y =np.meshgrid(x,y)
@@ -1130,8 +1192,8 @@ windx, windy = windDist(wndx1, wndy1, l, Y, coef_drag, uni=modo) # Se calcula la
 # Parámetros de iteración y convergencia
 max_iter_rho = 600 # Número máximo de iteraciones para el cálculo de la densidad de carga
 max_iter = 400 # Número máximo de iteraciones para el cálculo del potencial en el espacio
-it_global = 10 # Número máximo de iteraciones para el cálculo del potencial definitivo
-in_condct = 'no' # Condición de que se ubica la densidad de carga alrededor del conductor o solo en un nodo central
+it_global = 4 # Número máximo de iteraciones para el cálculo del potencial definitivo
+in_condct = 'si' # Condición de que se ubica la densidad de carga alrededor del conductor o solo en un nodo central
 copiado = 'no' # Condición de que los valores sean copiados o no al momento de mantener las condiciones de borde en las mallas
 histl = False # Si se desea crear la lista de evolución de la densidad de carga
 visualizacion = 15 #  número de la ventana donde se muestra la evolución de la densidad de carga
@@ -1174,7 +1236,7 @@ Q = np.dot(np.linalg.inv(P),V) # Se determinan las cargas de los conductores
 
 
 
-Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Ji, Jave = ejecutar_algoritmo(fixed_point, dia,
+Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Ji, Jave, Jtot = ejecutar_algoritmo(fixed_point, dia,
                                                                                                 fixed_value, X, Y, R,
                                                                                                   Q, mov, m, delta, nodosy,
                                                                                                     nodosx, dx, dy, windx,
@@ -1185,6 +1247,7 @@ Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Ji, Jave = ejec
                                                                                                               Muestra=mostrar, fi=fi)
 Exxini, Eyyini, Em = Campo_ini
 Edefx, Edefy, Edef = Campo_fin
+Jave = np.mean(Jtot[encuentra_nodos(0,l)[1],:])
 
 ######## GRAFICOS
 
@@ -1295,7 +1358,7 @@ def grafRhon(num):
 
 def grafRhoT(num):
     plt.figure(num)
-    min_linthresh = 1e-5  # Un valor mínimo positivo
+    min_linthresh = 1e-9  # Un valor mínimo positivo
     linthresh = max(np.abs(min(np.abs(np.min(rho_d)), np.max(rho_d)) / 5), min_linthresh)
     norm = SymLogNorm(linthresh=linthresh, vmin=rho_d.min(), vmax=rho_d.max(), base=10)
     mesh = plt.pcolormesh(X, Y, rho_d, cmap='viridis', shading='auto', norm=norm)
@@ -1359,7 +1422,8 @@ def grafEf(nm):
 
 def grafJ1(num):
     plt.figure(num)
-    plt.plot(x[30:-30], Ji[30:-30]*(10**9))
+    #plt.plot(x[30:-30], Ji[30:-30]*(10**9))
+    plt.plot(x[30:-30], Jtot[encuentra_nodos(0, l)[1],30:-30]*(10**9))
     plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
     plt.ylabel(r'Densidad de corriente iónica ($nA/m^2$)',fontsize=11)
     plt.title(r'Magnitud de corriente iónica a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(wndx), fontsize=13)
@@ -1372,9 +1436,9 @@ def grafE1(num):
     plt.plot(x[30:-30], -Edefy[encuentra_nodos(0, l)[1],30:-30]/1000)
     plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
     plt.ylabel(r'Campo eléctrico (kV/m)',fontsize=11)
-    plt.title(r'Magnitud de campo eléctrico a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(wndx), fontsize=13)
+    plt.title(r'Componente $E_y$ campo eléctrico a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(wndx), fontsize=13)
     plt.tight_layout()
-    plt.legend([f'$E_y$ = {str(np.round(np.mean(Edefy[]/1000),5))} kV'])
+    plt.legend([f'$E_y$ = {str(np.round(np.mean(Edefy[encuentra_nodos(0, l)[1],:]/1000),5))} kV'])
     plt.grid(True)
 
 gra = ['Eele', 'Vele', 'Rhop', 'Rhon', 'Rhof', 'Vf', 'Vdef', 'Ef', 'E1', 'J1']
@@ -1407,7 +1471,6 @@ def show_plot(graf):
             ax1 = fig.add_subplot(131, projection='3d')  # 1 fila, 2 columnas, gráfico 1
             surf1 = ax1.plot_surface(X, Y, rho_d*10**(6), cmap='viridis', edgecolor='none')
             fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)  # Barra de color
-
             ax1.set_title(r'Densidad de carga iónica total')
             ax1.set_xlabel('X')
             ax1.set_ylabel('Y')
@@ -1416,7 +1479,6 @@ def show_plot(graf):
             ax2 = fig.add_subplot(132, projection='3d')  # 1 fila, 2 columnas, gráfico 1
             surf2 = ax2.plot_surface(X, Y, rho_n*10**(6), cmap='viridis', edgecolor='none')
             fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10)  # Barra de color
-
             ax2.set_title(r'Densidad de carga iónica negativa')
             ax2.set_xlabel('X')
             ax2.set_ylabel('Y')
@@ -1425,7 +1487,6 @@ def show_plot(graf):
             ax3 = fig.add_subplot(133, projection='3d')  # 1 fila, 2 columnas, gráfico 1
             surf3 = ax3.plot_surface(X, Y, rho_p*10**(6), cmap='viridis', edgecolor='none')
             fig.colorbar(surf3, ax=ax3, shrink=0.5, aspect=10)  # Barra de color
-
             ax3.set_title(r'Densidad de carga iónica positiva')
             ax3.set_xlabel('X')
             ax3.set_ylabel('Y')
