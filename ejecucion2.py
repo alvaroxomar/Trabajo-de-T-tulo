@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import math
 import numpy as np
+import json
+import subprocess
 
 # Estado de gráficos
 estados_graficos = {"Gráfico 1": False, "Gráfico 2": False, "Gráfico 3": False, "Gráfico 4": False,
@@ -13,6 +15,7 @@ def alternar_grafico(nombre):
     estados_graficos[nombre] = not estados_graficos[nombre]
     mensaje = "seleccionado" if estados_graficos[nombre] else "deseleccionado"
     messagebox.showinfo(nombre, f"Se ha {mensaje} {nombre}.")
+
 
 # Botón Bipolar para activar/desactivar las casillas extra
 def activar_bipolar():
@@ -24,19 +27,20 @@ def activar_bipolar():
         entradas["Posición en y 2 (m)"].config(state="normal")
         entradas["factor conductor 2"].config(state="normal")
     else:  # Si el botón Bipolar está desmarcado
+        # Eliminar el contenido actual de las casillas
+        entrada_posicion_x2.delete(0, tk.END)  
+        entrada_posicion_y2.delete(0, tk.END)  
+    
+        # Insertar valores vacíos (o None si prefieres)
+        entrada_posicion_x2.insert(0, "")  
+        entrada_posicion_y2.insert(0, "")
+
         entradas["Voltaje 2(kV)"].config(state="disabled")
         entradas["Área 2 (mm²)"].config(state="disabled")
         entradas["Posición en x 2 (m)"].config(state="disabled")
         entradas["Posición en y 2 (m)"].config(state="disabled")
         entradas["factor conductor 2"].config(state="disabled")
 
-        # Eliminar el contenido actual de las casillas
-        entrada_posicion_x2.delete(0, tk.END)  
-        entrada_posicion_y2.delete(0, tk.END)  
-        
-        # Insertar valores vacíos (o None si prefieres)
-        entrada_posicion_x2.insert(0, "")  
-        entrada_posicion_y2.insert(0, "")  
         
         # Establecer x2 y y2 como None para que no se grafiquen
         #global x2, y2  # Si las variables x2 y y2 son globales
@@ -47,7 +51,80 @@ def activar_bipolar():
         # Redibujar solo los puntos x, y (sin x2, y2)
         validar_campos_y_graficar()  # Esto vuelve a graficar los puntos con las nuevas configuraciones
 
+def activar_auto_red():
+    """Controla el estado de las casillas según el botón 'Auto red'."""
+    if boton_auto_red_var.get():
+        # Habilitar todas las casillas temporalmente para permitir la selección
+        for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
+            entradas[entrada].config(state="normal")
 
+        # Vincular eventos para detectar el primer grupo que se edite
+        entradas["Ancho (m)"].bind("<FocusIn>", lambda e: habilitar_grupo("dimensiones"))
+        entradas["Altura (m)"].bind("<FocusIn>", lambda e: habilitar_grupo("dimensiones"))
+        entradas["nodos x"].bind("<FocusIn>", lambda e: habilitar_grupo("nodos"))
+        entradas["nodos y"].bind("<FocusIn>", lambda e: habilitar_grupo("nodos"))
+    else:
+        for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
+            entradas[entrada].config(state="normal")
+        # Restablecer los valores y habilitar todas las casillas
+        restablecer_valores()
+        # Desvincular eventos
+        for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
+            entradas[entrada].unbind("<FocusIn>")
+
+def habilitar_grupo(grupo):
+    """Habilitar un grupo y deshabilitar el opuesto después de la interacción del usuario."""
+    if grupo == "dimensiones":
+        # Habilitar dimensiones, deshabilitar nodos
+        entradas["Ancho (m)"].config(state="normal")
+        entradas["Altura (m)"].config(state="normal")
+        # Limpiar y deshabilitar nodos
+        entradas["nodos x"].delete(0, tk.END)
+        entradas["nodos y"].delete(0, tk.END)
+        entradas["nodos x"].config(state="disabled")
+        entradas["nodos y"].config(state="disabled")
+    elif grupo == "nodos":
+        # Habilitar nodos, deshabilitar dimensiones
+        entradas["nodos x"].config(state="normal")
+        entradas["nodos y"].config(state="normal")
+        # Limpiar y deshabilitar dimensiones
+        entradas["Ancho (m)"].delete(0, tk.END)
+        entradas["Altura (m)"].delete(0, tk.END)
+        entradas["Ancho (m)"].config(state="disabled")
+        entradas["Altura (m)"].config(state="disabled")
+
+    # Desvincular eventos de FocusIn una vez que se seleccionó un grupo
+    for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
+        entradas[entrada].unbind("<FocusIn>")
+
+def restablecer_valores():
+    """Rellena las casillas inhabilitadas con valores por defecto y conserva los valores existentes en las habilitadas."""
+    valores_por_defecto = {"Ancho (m)": "5","Altura (m)": "10","nodos x": "100","nodos y": "100",}
+
+    for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
+        # Si la casilla está vacía, colocar el valor por defecto
+        if not entradas[entrada].get():
+            entradas[entrada].insert(0, valores_por_defecto[entrada])
+
+
+def ejecutar_script():
+    # Guardar todos los parametros en un diccionario
+    params = {nombre: entrada.get() for nombre, entrada in entradas.items()}
+    # Crear un mensaje con los valores
+    mensaje = "\n".join([f"{clave}: {valor}" for clave, valor in params.items()])
+    # Mostrar un cuadro de diálogo con los valores
+    messagebox.showinfo("Parámetros Guardados", mensaje)
+    # Convertir los parámetros a JSON
+    params_json = json.dumps(params)
+    if boton_bipolar_var.get():
+        # Ejecutar el script bipolar con los parámetros
+        subprocess.run(["python", "bipolar.py", params_json], check=True)
+        messagebox.showinfo("Éxito", "El archivo bipolar.py se ejecutó correctamente.")
+    else:
+        # Ejecutar el script unipolar con los parámetros
+        subprocess.run(["python", "script_ejecucion.py", params_json], check=True)
+        messagebox.showinfo("Éxito", "El archivo unipolar.py se ejecutó correctamente.")
+    
 
 def validar_campos_y_ejecutar():
     # Obtener valor de cantidad
@@ -61,6 +138,14 @@ def validar_campos_y_ejecutar():
         if nombre == "Separación (m)" and cantidad <= 1:
             continue  # Ignorar esta casilla
         if nombre == "Rugosidad terreno":
+            continue
+        if nombre == "Ancho (m)":
+            continue  # Ignorar esta casilla
+        if nombre == "Altura (m)":
+            continue
+        if nombre == "nodos x":
+            continue  # Ignorar esta casilla
+        if nombre == "nodos y":
             continue
 
         valor = entrada.get().strip()  # Obtener valor sin espacios adicionales
@@ -91,26 +176,42 @@ def validar_campos_y_ejecutar():
             messagebox.showwarning("Advertencia", f"El valor ingresado en '{nombre}' debe ser un número.")
             return
 
-    # Validar campos de dimensionamiento
-    if not entrada_ancho_total.get() or not entrada_altura_total.get():
-        messagebox.showwarning("Advertencia", "Debe ingresar valores numéricos en las casillas de dimensionamiento.")
-        return
+    campos_dimensionamiento = ["Ancho (m)", "Altura (m)", "nodos x", "nodos y", "Medición (m)"]
 
-    try:
-        float(entrada_ancho_total.get())
-        float(entrada_altura_total.get())
-    except ValueError:
-        messagebox.showwarning("Advertencia", "Los valores de ancho y altura deben ser números.")
-        return
+    # Verificar si los valores no vacíos son números válidos
+    for campo in campos_dimensionamiento:
+        valor = entradas[campo].get()
+        if valor != "":  # Permitir valores vacíos
+            try:
+                # Intentar convertir el valor a float
+                float(valor)
+            except ValueError:
+                messagebox.showwarning("Advertencia", f"El valor de {campo} debe ser un número válido o estar vacío.")
+                return
 
     messagebox.showinfo("Validación exitosa", "Todos los campos han sido completados correctamente.")
+    ejecutar_script()
 
 def validar_campos_y_graficar():
     try:
+        x = float(entrada_posicion_x.get())
+        y = float(entrada_posicion_y.get())
+
         # Validar datos de dimensionamiento
-        ancho_mitad = float(entrada_ancho_total.get())
-        altura_total = float(entrada_altura_total.get())
-        
+        ancho_mitad = entradas["Ancho (m)"].get()
+        altura_total = entradas["Altura (m)"].get()
+
+        # Si están vacíos, asignar valores de entrada_posicion_x y entrada_posicion_y
+        if not ancho_mitad:  # Si ancho_mitad está vacío
+            ancho_mitad = y*2  # Asignar valor de nodos x
+        else:
+            ancho_mitad = float(ancho_mitad)  # Convertir el valor a float si no está vacío
+
+        if not altura_total:  # Si altura_total está vacío
+            altura_total = y*2  # Asignar valor de nodos y
+        else:
+            altura_total = float(altura_total)  # Convertir el valor a float si no está vacío
+
         if ancho_mitad <= 0 or altura_total <= 0:
             raise ValueError("El ancho y la altura deben ser mayores que 0.")
 
@@ -119,9 +220,6 @@ def validar_campos_y_graficar():
         if cantidad <= 0:
             raise ValueError("La cantidad debe ser mayor que 0.")
         
-        x = float(entrada_posicion_x.get())
-        y = float(entrada_posicion_y.get())
-
         # Obtener las posiciones x2 y y2
         x2e = entrada_posicion_x2.get()
         y2e = entrada_posicion_y2.get()
@@ -220,7 +318,7 @@ def graficar_puntos(fig, ax, x, y, cantidad, separacion, ancho_mitad, altura_tot
         if n == 1:
             ax.plot(x[j], y[j], 'o', color='blue', label="Conductor")
         elif n >= 2:
-            radio = (separacion / 2) * (1 / math.sin(math.pi / n))
+            radio = ((separacion/100) / 2) * (1 / math.sin(math.pi / n))
             puntos = generar_poligono(n, radio, x[j], y[j])
             for i in range(len(puntos)):
                 ax.plot(puntos[i][0], puntos[i][1], 'o', color=colors[j], label=f"Conductor {pos[j]}" if i == 0 else None)
@@ -291,7 +389,7 @@ secciones = {
         ("Posición en y (m)", "5"),
         ("factor conductor", "1"),
         ("Cantidad", ""), 
-        ("Separación (m)", ""),
+        ("Separación (cm)", "0"),
         ("Voltaje 2(kV)", "-400"), # Agregar nuevo campo (deshabilitado inicialmente)
         ("Área 2 (mm²)", "100"),
         ("Posición en x 2 (m)", "0"), 
@@ -299,6 +397,7 @@ secciones = {
         ("factor conductor 2", "1"),
     ],
     "Características ambientales": [
+        ("Movilidad iónica (m2/kVs)", "0.15"),
         ("Temperatura (°C)", "25"), 
         ("Presión (Pa)", ""), 
         ("Humedad (%)", "50"), 
@@ -364,22 +463,31 @@ for j, (nombre, valor_defecto) in enumerate(secciones["Características ambienta
     entrada.grid(row=j, column=1, padx=5, pady=2)
     entradas[nombre] = entrada
 
+# Definir los campos y sus valores por defecto en una lista de tuplas
+campos_dimensionamiento = [
+    ("Ancho (m)", "5"),
+    ("Altura (m)", "10"),
+    ("nodos x", "100"),
+    ("nodos y", "100"),
+    ("Medición (m)", "1")
+]
+
 # Crear la parte de "Dimensionamiento" en la subcolumna
-marco_dimensionamiento = ttk.LabelFrame(marco_contenedor, text="Dimensionamiento", padding=10)
+marco_dimensionamiento = ttk.LabelFrame(marco_contenedor, text="Dimensionamiento & Discretización", padding=10)
 marco_dimensionamiento.grid(row=0, column=1, padx=10, pady=5, sticky="w")
 
-ttk.Label(marco_dimensionamiento, text="Ancho (m)").grid(row=0, column=0, sticky="w", padx=5, pady=2)
-entrada_ancho_total = ttk.Entry(marco_dimensionamiento)
-entrada_ancho_total.insert(0, "5")
-entrada_ancho_total.grid(row=0, column=1, padx=5, pady=2)
+# Crear las entradas dinámicamente
+for i, (nombre, valor_defecto) in enumerate(campos_dimensionamiento):
+    ttk.Label(marco_dimensionamiento, text=nombre).grid(row=i, column=0, sticky="w", padx=5, pady=2)
+    entrada = ttk.Entry(marco_dimensionamiento)
+    entrada.insert(0, valor_defecto)
+    entrada.grid(row=i, column=1, padx=5, pady=2)
+    entradas[nombre] = entrada  # Guardar en el diccionario
 
-ttk.Label(marco_dimensionamiento, text="Altura (m)").grid(row=1, column=0, sticky="w", padx=5, pady=2)
-entrada_altura_total = ttk.Entry(marco_dimensionamiento)
-entrada_altura_total.insert(0, "10")
-entrada_altura_total.grid(row=1, column=1, padx=5, pady=2)
+
 # Variables específicas
 entrada_cantidad = entradas["Cantidad"]
-entrada_separacion = entradas["Separación (m)"]
+entrada_separacion = entradas["Separación (cm)"]
 entrada_posicion_x = entradas["Posición en x (m)"]
 entrada_posicion_y = entradas["Posición en y (m)"]
 
@@ -402,17 +510,24 @@ entrada_rugosidad_terreno.config(state='disabled') # Desactivada inicialmente
 
 # Botones principales
 marco_botones = ttk.Frame(ventana, padding=10)
-marco_botones.grid(row=len(secciones) + 1, column=0, columnspan=2, sticky="w", padx=10, pady=5)  # Usar grid
+marco_botones.grid(row=len(secciones) + 1, column=0, columnspan=3, sticky="w", padx=10, pady=5)  # Usar grid
 
+# Coloca los botones principales en las primeras columnas
 ttk.Button(marco_botones, text="Guardar", command=guardar_datos).grid(row=0, column=0, padx=5)
 ttk.Button(marco_botones, text="Limpiar", command=limpiar_campos).grid(row=0, column=1, padx=5)
 ttk.Button(marco_botones, text="Graficar", command=validar_campos_y_graficar).grid(row=0, column=2, padx=5)
 ttk.Button(marco_botones, text="Ejecutar", command=validar_campos_y_ejecutar).grid(row=0, column=3, padx=5)
 
-# Crear el botón Bipolar
+# Crear el botón Bipolar inmediatamente a la derecha
 boton_bipolar_var = tk.BooleanVar()  # Variable para controlar el estado del botón
-boton_bipolar = ttk.Checkbutton(ventana, text="Bipolar", variable=boton_bipolar_var, command=activar_bipolar)
-boton_bipolar.grid(row=len(secciones) + 2, column=0, padx=5, pady=10)
+boton_bipolar = ttk.Checkbutton(marco_botones, text="Bipolar", variable=boton_bipolar_var, command=activar_bipolar)
+boton_bipolar.grid(row=0, column=4, padx=5, pady=10)  # Ubicado justo después de los botones principales
+
+# Añadir un nuevo botón "Auto red" inmediatamente a la derecha del Bipolar
+boton_auto_red_var = tk.BooleanVar()  # Variable para controlar el estado del botón
+boton_auto_red = ttk.Checkbutton(marco_botones, text="Auto red", variable=boton_auto_red_var, command=activar_auto_red)
+boton_auto_red.grid(row=0, column=5, padx=5, pady=10)  # Ubicado justo al lado del Bipolar
+
 
 # Botones de gráficos
 marco_graficos = ttk.LabelFrame(ventana, text="Gráficos", padding=10)
