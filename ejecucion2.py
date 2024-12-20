@@ -7,14 +7,41 @@ import numpy as np
 import json
 import subprocess
 
+plt.close('all')
+
 # Estado de gráficos
-estados_graficos = {"Gráfico 1": False, "Gráfico 2": False, "Gráfico 3": False, "Gráfico 4": False,
-                     "Gráfico 5": False, "Gráfico 6": False, "Gráfico 7": False, "Gráfico 8": False}
+#'Eele', 'Vele', 'Rhof', 'Vf', 'Vdef', 'Ef', 'J1', 'E1', 'SubPl'
+estados_graficos = {
+    "Eele": False, "Vele": False, "Rhof": False, "Vf": False,
+    "Vdef": False, "Ef": False, "J1": False, "E1": False
+}
+graficos = []
 
 def alternar_grafico(nombre):
+    """
+    Alterna el estado de un gráfico, actualiza la lista de gráficos seleccionados y muestra un mensaje.
+    
+    Args:
+        nombre (str): Nombre del gráfico.
+    """
+    # Cambiar el estado del gráfico
     estados_graficos[nombre] = not estados_graficos[nombre]
     mensaje = "seleccionado" if estados_graficos[nombre] else "deseleccionado"
+    
+    # Actualizar la lista de gráficos activados
+    if estados_graficos[nombre]:
+        if nombre not in graficos:
+            graficos.append(nombre)  # Agregar a la lista si está seleccionado
+    else:
+        if nombre in graficos:
+            graficos.remove(nombre)  # Eliminar de la lista si está deseleccionado
+    
+    # Mostrar el mensaje
     messagebox.showinfo(nombre, f"Se ha {mensaje} {nombre}.")
+    
+    # Imprimir el estado actual de la lista (opcional)
+    print(f"Gráficos seleccionados: {graficos}")
+
 
 
 # Botón Bipolar para activar/desactivar las casillas extra
@@ -110,6 +137,8 @@ def restablecer_valores():
 def ejecutar_script():
     # Guardar todos los parametros en un diccionario
     params = {nombre: entrada.get() for nombre, entrada in entradas.items()}
+    params['graficos'] = graficos
+    params['guardar'] = estado_guardado
     # Crear un mensaje con los valores
     mensaje = "\n".join([f"{clave}: {valor}" for clave, valor in params.items()])
     # Mostrar un cuadro de diálogo con los valores
@@ -168,6 +197,19 @@ def validar_campos_y_ejecutar():
                 )
                 return
             continue  # Saltar el resto de la validación para este campo
+        # Validar "Modo (str)" para aceptar solo "uniforme" o "gradiente"
+        if nombre == "Periferia conductor":
+            if valor.isdigit():
+                messagebox.showwarning(
+                    "Advertencia", f"El valor en '{nombre}' no puede ser numérico. Debe ser 'si', 'no' o 'noV'."
+                )
+                return
+            if valor not in ["si", "no", "noV"]:
+                messagebox.showwarning(
+                    "Advertencia", f"El valor ingresado en '{nombre}' debe ser 'si', 'no' o 'noV'."
+                )
+                return
+            continue  # Saltar el resto de la validación para este campo
 
         # Validar que los demás campos sean números válidos
         try:
@@ -192,7 +234,12 @@ def validar_campos_y_ejecutar():
     messagebox.showinfo("Validación exitosa", "Todos los campos han sido completados correctamente.")
     ejecutar_script()
 
+# Inicialización global de canvas
+canvas = None
+
 def validar_campos_y_graficar():
+    # Cerrar todas las figuras de Matplotlib previas si existen
+    plt.close('all')  # Asegura que las figuras de Matplotlib se cierren correctamente
     try:
         x = float(entrada_posicion_x.get())
         y = float(entrada_posicion_y.get())
@@ -203,12 +250,12 @@ def validar_campos_y_graficar():
 
         # Si están vacíos, asignar valores de entrada_posicion_x y entrada_posicion_y
         if not ancho_mitad:  # Si ancho_mitad está vacío
-            ancho_mitad = y*2  # Asignar valor de nodos x
+            ancho_mitad = y * 2  # Asignar valor de nodos x
         else:
             ancho_mitad = float(ancho_mitad)  # Convertir el valor a float si no está vacío
 
         if not altura_total:  # Si altura_total está vacío
-            altura_total = y*2  # Asignar valor de nodos y
+            altura_total = y * 2  # Asignar valor de nodos y
         else:
             altura_total = float(altura_total)  # Convertir el valor a float si no está vacío
 
@@ -253,12 +300,9 @@ def validar_campos_y_graficar():
         messagebox.showwarning("Advertencia", f"Error en los datos ingresados: {e}")
         return
 
-    # Cerrar figuras previas si existen
-    plt.close('all')
-
     # Graficar los puntos
     fig, ax = plt.subplots(figsize=(5, 5))
-    
+
     # Condicional para graficar solo si x2 y y2 no son None
     if x2 is not None and y2 is not None:
         xs = [x, x2]
@@ -269,6 +313,45 @@ def validar_campos_y_graficar():
 
     # Llamar a la función para graficar los puntos
     graficar_puntos(fig, ax, xs, ys, cantidad, separacion, ancho_mitad, altura_total)
+
+def graficar_puntos(fig, ax, x, y, cantidad, separacion, ancho_mitad, altura_total):
+    # Configurar límites
+    ax.set_xlim(-ancho_mitad, ancho_mitad)
+    ax.set_ylim(0, altura_total)
+    ax.set_title("Distribución de conductores")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.grid(True)
+
+    n = int(cantidad)
+    pos = ["izquierdo", "derecho"]
+    colors = ["blue", "green"]
+
+    # Dibujar puntos
+    for j in range(len(x)):
+        # Verificar si los puntos están dentro de los límites
+        if abs(x[j]) > ancho_mitad:
+            messagebox.showwarning("Advertencia", f"El punto ({x[j]}, {y[j]}) excede el rango horizontal ({-ancho_mitad}, {ancho_mitad}).")
+        if n == 1:
+            ax.plot(x[j], y[j], 'o', color='blue', label="Conductor")
+        elif n >= 2:
+            radio = ((separacion / 100) / 2) * (1 / math.sin(math.pi / n))
+            puntos = generar_poligono(n, radio, x[j], y[j])
+            for i in range(len(puntos)):
+                ax.plot(puntos[i][0], puntos[i][1], 'o', color=colors[j], label=f"Conductor {pos[j]}" if i == 0 else None)
+
+    # Agregar leyenda
+    ax.legend(loc="upper right")
+
+    # Mostrar gráfico en la interfaz
+    global canvas
+    if canvas is not None:
+        canvas.get_tk_widget().destroy()  # Destruir el canvas anterior
+
+    # Crear y mostrar el nuevo canvas
+    canvas = FigureCanvasTkAgg(fig, ventana)  # Crear nuevo canvas
+    canvas.get_tk_widget().place(x=600, y=20)  # Mostrar el nuevo gráfico
+
 
 
 def generar_poligono(n_lados, radio, centro_x=0, centro_y=0):
@@ -297,46 +380,22 @@ def generar_poligono(n_lados, radio, centro_x=0, centro_y=0):
             lista_puntos.append((x, y))
     return lista_puntos
 
-def graficar_puntos(fig, ax, x, y, cantidad, separacion, ancho_mitad, altura_total):
-    # Configurar límites
-    ax.set_xlim(-ancho_mitad, ancho_mitad)
-    ax.set_ylim(0, altura_total)
-    ax.set_title("Distribución de conductores")
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.grid(True)
-
-    n = int(cantidad)
-    pos = ["izquierdo", "derecho"]
-    colors = ["blue", "green"]
-
-    # Dibujar puntos
-    for j in range(len(x)):
-        # Verificar si los puntos están dentro de los límites
-        if abs(x[j]) > ancho_mitad:
-            messagebox.showwarning("Advertencia", f"El punto ({x[j]}, {y[j]}) excede el rango horizontal ({-ancho_mitad}, {ancho_mitad}).")
-        if n == 1:
-            ax.plot(x[j], y[j], 'o', color='blue', label="Conductor")
-        elif n >= 2:
-            radio = ((separacion/100) / 2) * (1 / math.sin(math.pi / n))
-            puntos = generar_poligono(n, radio, x[j], y[j])
-            for i in range(len(puntos)):
-                ax.plot(puntos[i][0], puntos[i][1], 'o', color=colors[j], label=f"Conductor {pos[j]}" if i == 0 else None)
-
-    # Agregar leyenda
-    ax.legend(loc="upper right")
-
-    # Mostrar gráfico en la interfaz
-    global canvas
-    if canvas is not None:
-        canvas.get_tk_widget().destroy()
-    canvas = FigureCanvasTkAgg(fig, ventana)
-    canvas.get_tk_widget().place(x=600, y=20)
-
+estado_guardado = False
 
 def guardar_datos():
-    datos = {nombre: entrada.get() for nombre, entrada in entradas.items()}
-    messagebox.showinfo("Datos guardados", f"Datos capturados:\n{datos}")
+    global estado_guardado  # Referencia la variable global
+    
+    # Alternar entre True y False
+    if estado_guardado:
+        estado_guardado = False
+        messagebox.showinfo("Datos no guardados", "No se guardaran los datos una vez ejecutado el programa")
+    else:
+        datos = {nombre: entrada.get() for nombre, entrada in entradas.items() if isinstance(entrada, ttk.Entry)}
+        messagebox.showinfo("Datos guardados", f"Datos capturados:\n{datos}")
+        estado_guardado = True
+
+
+
 
 def limpiar_campos():
     for entrada in entradas.values():
@@ -367,18 +426,18 @@ def verificar_modo_viento(*args):
         entrada_rugosidad_terreno.delete(0, tk.END)
         entrada_rugosidad_terreno.config(state="disabled")
 
-def validar_natural(texto):
+def validar_natural(texto, nombre):
     """Valida que el texto ingresado sea un número natural."""
     if texto == "" or (texto.isdigit() and int(texto) > 0):
         return True
     else:
-        messagebox.showwarning("Valor inválido", "La casilla 'Cantidad' solo acepta números naturales (1, 2, 3...).")
+        messagebox.showwarning("Valor inválido", f"La casilla '{nombre}' solo acepta números naturales (1, 2, 3...).")
         return False
     
 # Crear la ventana principal
 ventana = tk.Tk()
 ventana.title("Ajuste de parámetros")
-ventana.geometry("1100x700")
+ventana.geometry("1200x700")
 
 # Contenedores principales
 secciones = {
@@ -395,28 +454,47 @@ secciones = {
         ("Posición en x 2 (m)", "0"), 
         ("Posición en y 2 (m)", "5"),
         ("factor conductor 2", "1"),
+        ("Jp (nA/m^2)", "1988e-8"),
+        ("Tol Jp", "1e-2")
     ],
     "Características ambientales": [
         ("Movilidad iónica (m2/kVs)", "0.15"),
         ("Temperatura (°C)", "25"), 
-        ("Presión (Pa)", ""), 
-        ("Humedad (%)", "50"), 
-        ("Viento (m/s)", ""), 
+        ("Presión (Pa)", "110"),  
+        ("Viento x (m/s)", "0"),
+        ("Viento y (m/s)", "0"),
         ("Modo (str)", "uniforme"), 
-        ("Rugosidad terreno", "0.2")
+        ("Rugosidad terreno", "0.2"),
+        ("Interior conductor", "si")
     ]
 }
 
 entradas = {}
 for i, (seccion, campos) in enumerate(secciones.items()):
-    marco = ttk.LabelFrame(ventana, text=seccion, padding=10)
-    
     if seccion == "Características de los conductores":
-        marco.grid(row=i, column=0, sticky="w", padx=10, pady=5)  # Columna 0
-    #elif seccion == "Características ambientales":
-    #    marco.grid(row=i, column=1, sticky="w", padx=10, pady=5)  # Columna 1
-    
-    if seccion == "Características de los conductores":  # Para la sección de conductores
+        # Marco contenedor para incluir título y marco decorado
+        marco_contenedor = tk.Frame(ventana)
+        marco_contenedor.grid(row=i, column=0, sticky="w", padx=10, pady=5)
+
+        # Título destacado
+        titulo = ttk.Label(
+            marco_contenedor,
+            text="Características de los conductores",
+            background="lightblue",
+            font=("Arial", 10, "bold")
+        )
+        titulo.grid(row=0, column=0, sticky="w", padx=5, pady=(0, 5))
+
+        # Marco decorado
+        marco = tk.Frame(
+            marco_contenedor,
+            highlightthickness=3,           # Grosor del borde
+            highlightbackground="gray",    # Color del borde sin enfoque
+            highlightcolor="green",        # Color del borde con enfoque
+            bg="lightgray"                 # Fondo del marco
+        )
+        marco.grid(row=1, column=0, sticky="w")
+
         # Organizar las casillas en dos columnas
         for j, (nombre, valor_defecto) in enumerate(campos[:7]):  # Las primeras 7 casillas
             ttk.Label(marco, text=nombre).grid(row=j, column=0, sticky="w", padx=5, pady=2)
@@ -425,21 +503,24 @@ for i, (seccion, campos) in enumerate(secciones.items()):
             entrada.grid(row=j, column=1, padx=5, pady=2)
             entradas[nombre] = entrada
             # Deshabilitar las casillas extra inicialmente
-            if "2" in nombre:
+            if "2" in nombre and nombre != "Jp (nA/m^2)":
                 entrada.config(state="disabled")
-        
-        # Las casillas "Área 2", "Posición en x 2" y "Posición en y 2" en la segunda columna
-        for j, (nombre, valor_defecto) in enumerate(campos[7:], start=0):  # Las tres casillas adicionales
+
+        # Las casillas adicionales en la segunda columna
+        for j, (nombre, valor_defecto) in enumerate(campos[7:], start=0):
             ttk.Label(marco, text=nombre).grid(row=j, column=2, sticky="w", padx=5, pady=2)
             entrada = ttk.Entry(marco)
             entrada.insert(0, valor_defecto)
             entrada.grid(row=j, column=3, padx=5, pady=2)
             entradas[nombre] = entrada
             # Deshabilitar las casillas extra inicialmente
-            if "2" in nombre:
+            if "2" in nombre and nombre != "Jp (nA/m^2)":
                 entrada.config(state="disabled")
     else:
-        # Para las otras secciones, organizarlas como estaban
+        # Para las otras secciones
+        marco = ttk.LabelFrame(ventana, text=seccion, padding=10)
+        marco.grid(row=i, column=0, sticky="w", padx=10, pady=5)
+
         for j, (nombre, valor_defecto) in enumerate(campos):
             ttk.Label(marco, text=nombre).grid(row=j, column=0, sticky="w", padx=5, pady=2)
             entrada = ttk.Entry(marco)
@@ -447,23 +528,43 @@ for i, (seccion, campos) in enumerate(secciones.items()):
             entrada.grid(row=j, column=1, padx=5, pady=2)
             entradas[nombre] = entrada
 
-# Crear un contenedor para las secciones de "Características ambientales" y "Dimensionamiento"
+# Crear un contenedor para las secciones
 marco_contenedor = ttk.Frame(ventana)
-marco_contenedor.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="w")  # "sticky" con "w" asegura alineación izquierda
+marco_contenedor.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="w")  # Contenedor general
 
-# Subcolumnas para acercar "Dimensionamiento" a "Características ambientales"
-# Primero, crear la parte de "Características ambientales"
-marco_ambientales = ttk.LabelFrame(marco_contenedor, text="Características ambientales", padding=10)
+# Parte de "Características ambientales"
+marco_ambientales = tk.Frame(
+    marco_contenedor,
+    highlightthickness=3,            # Grosor del borde
+    highlightbackground="gray",     # Color del borde sin enfoque
+    highlightcolor="cyan",          # Color del borde con enfoque
+    bg="lightgray"                  # Fondo del marco
+)
 marco_ambientales.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+ttk.Label(marco_ambientales, text="Características ambientales", background="lightblue").grid(row=0, column=0, columnspan=2, sticky="w")
 
 for j, (nombre, valor_defecto) in enumerate(secciones["Características ambientales"]):
-    ttk.Label(marco_ambientales, text=nombre).grid(row=j, column=0, sticky="w", padx=5, pady=2)
+    ttk.Label(marco_ambientales, text=nombre).grid(row=j + 1, column=0, sticky="w", padx=5, pady=2)
     entrada = ttk.Entry(marco_ambientales)
     entrada.insert(0, valor_defecto)
-    entrada.grid(row=j, column=1, padx=5, pady=2)
+    entrada.grid(row=j + 1, column=1, padx=5, pady=2)
     entradas[nombre] = entrada
 
-# Definir los campos y sus valores por defecto en una lista de tuplas
+# Contenedor para "Dimensionamiento" e "Iteraciones" (subcolumna)
+marco_segunda_columna = ttk.Frame(marco_contenedor)
+marco_segunda_columna.grid(row=0, column=1, sticky="nw")  # `sticky="nw"` para alinear en la parte superior izquierda
+
+# Parte de "Dimensionamiento"
+marco_dimensionamiento = tk.Frame(
+    marco_segunda_columna,
+    highlightthickness=3,
+    highlightbackground="gray",
+    highlightcolor="lime",
+    bg="lightgray"
+)
+marco_dimensionamiento.grid(row=0, column=0, padx=5, pady=(0, 2), sticky="w")  # Reduce espacio inferior con pady=(0, 2)
+ttk.Label(marco_dimensionamiento, text="Dimensionamiento & Discretización", background="lightgreen").grid(row=0, column=0, columnspan=2, sticky="w")
+
 campos_dimensionamiento = [
     ("Ancho (m)", "5"),
     ("Altura (m)", "10"),
@@ -471,18 +572,35 @@ campos_dimensionamiento = [
     ("nodos y", "100"),
     ("Medición (m)", "1")
 ]
-
-# Crear la parte de "Dimensionamiento" en la subcolumna
-marco_dimensionamiento = ttk.LabelFrame(marco_contenedor, text="Dimensionamiento & Discretización", padding=10)
-marco_dimensionamiento.grid(row=0, column=1, padx=10, pady=5, sticky="w")
-
-# Crear las entradas dinámicamente
 for i, (nombre, valor_defecto) in enumerate(campos_dimensionamiento):
-    ttk.Label(marco_dimensionamiento, text=nombre).grid(row=i, column=0, sticky="w", padx=5, pady=2)
+    ttk.Label(marco_dimensionamiento, text=nombre).grid(row=i + 1, column=0, sticky="w", padx=5, pady=2)
     entrada = ttk.Entry(marco_dimensionamiento)
     entrada.insert(0, valor_defecto)
-    entrada.grid(row=i, column=1, padx=5, pady=2)
-    entradas[nombre] = entrada  # Guardar en el diccionario
+    entrada.grid(row=i + 1, column=1, padx=5, pady=2)
+    entradas[nombre] = entrada
+
+# Parte de "Iteraciones"
+marco_iteracion = tk.Frame(
+    marco_segunda_columna,
+    highlightthickness=3,
+    highlightbackground="gray",
+    highlightcolor="orange",
+    bg="lightgray"
+)
+marco_iteracion.grid(row=1, column=0, padx=5, pady=(2, 0), sticky="w")  # Reduce espacio superior con pady=(2, 0)
+ttk.Label(marco_iteracion, text="Iteraciones", background="lightcoral").grid(row=0, column=0, columnspan=2, sticky="w")
+
+campos_iteraciones = [
+    ("Max iter rho", "400"),
+    ("Max iter V", "230"),
+    ("Max iter Gob", "10")
+]
+for i, (nombre, valor_defecto) in enumerate(campos_iteraciones):
+    ttk.Label(marco_iteracion, text=nombre).grid(row=i + 1, column=0, sticky="w", padx=5, pady=2)
+    entrada = ttk.Entry(marco_iteracion)
+    entrada.insert(0, valor_defecto)
+    entrada.grid(row=i + 1, column=1, padx=5, pady=2)
+    entradas[nombre] = entrada
 
 
 # Variables específicas
@@ -495,9 +613,13 @@ entrada_posicion_x2 =  entradas["Posición en x 2 (m)"]
 entrada_posicion_y2 =  entradas["Posición en y 2 (m)"]
 
 
-# Validación de números naturales
-validacion_natural = ventana.register(validar_natural)
-entrada_cantidad.config(validate="key", validatecommand=(validacion_natural, "%P"))
+# Registrar la función de validación
+validacion_natural = ventana.register(lambda texto, nombre: validar_natural(texto, nombre))
+# Configurar validaciones con nombres específicos
+entrada_cantidad.config(validate="key", validatecommand=(validacion_natural, "%P", "Cantidad"))
+entradas["Max iter rho"].config(validate="key", validatecommand=(validacion_natural, "%P", "Max iter rho"))
+entradas["Max iter V"].config(validate="key", validatecommand=(validacion_natural, "%P", "Max iter V"))
+entradas["Max iter Gob"].config(validate="key", validatecommand=(validacion_natural, "%P", "Max iter Gob"))
 
 entrada_cantidad.bind("<KeyRelease>", verificar_separacion)  # Asociar el evento de escritura
 entrada_separacion.config(state="disabled")  # Desactivada inicialmente
@@ -530,8 +652,28 @@ boton_auto_red.grid(row=0, column=5, padx=5, pady=10)  # Ubicado justo al lado d
 
 
 # Botones de gráficos
-marco_graficos = ttk.LabelFrame(ventana, text="Gráficos", padding=10)
-marco_graficos.grid(row=len(secciones) + 3, column=0, columnspan=2, padx=10, pady=5)
+marco_contenedor = tk.Frame(ventana)
+marco_contenedor.grid(row=len(secciones) + 3, column=0, columnspan=2, padx=10, pady=5)
+
+# Título destacado
+titulo = ttk.Label(
+    marco_contenedor,
+    text="Gráficos",
+    background="lightblue",
+    font=("Arial", 8, "bold")
+)
+titulo.grid(row=0, column=0, sticky="w", padx=5, pady=(0, 5))
+
+# Marco decorado
+marco_graficos = tk.Frame(
+    marco_contenedor,
+    highlightthickness=3,           # Grosor del borde
+    highlightbackground="gray",    # Color del borde sin enfoque
+    highlightcolor="green",        # Color del borde con enfoque
+    bg="lightgray"                 # Fondo del marco
+)
+marco_graficos.grid(row=1, column=0, sticky="w", padx=10, pady=5)
+
 
 # Distribuir botones en 2 filas y 4 columnas
 num_columnas = 4  # Número de columnas deseadas
@@ -540,8 +682,6 @@ for i, grafico in enumerate(estados_graficos):
     columna = i % num_columnas  # Resto de la división para obtener la columna
     ttk.Button(marco_graficos, text=grafico, command=lambda g=grafico: alternar_grafico(g)).grid(row=fila, column=columna, padx=5, pady=5)
 
-# Espacio para el gráfico
-canvas = None
 
 # Iniciar la aplicación
 ventana.mainloop()
