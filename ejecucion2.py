@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, font
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import math
@@ -12,8 +12,8 @@ plt.close('all')
 # Estado de gráficos
 #'Eele', 'Vele', 'Rhof', 'Vf', 'Vdef', 'Ef', 'J1', 'E1', 'SubPl'
 estados_graficos = {
-    "Eele": False, "Vele": False, "Rhof": False, "Vf": False,
-    "Vdef": False, "Ef": False, "J1": False, "E1": False
+    "Eele": False, "Vele": False, "Rhof": False, "Vf": False, "SPd": False,
+    "Vdef": False, "Ef": False, "J1": False, "E1": False, "SPv": False
 }
 graficos = []
 
@@ -27,7 +27,6 @@ def alternar_grafico(nombre):
     # Cambiar el estado del gráfico
     estados_graficos[nombre] = not estados_graficos[nombre]
     mensaje = "seleccionado" if estados_graficos[nombre] else "deseleccionado"
-    
     # Actualizar la lista de gráficos activados
     if estados_graficos[nombre]:
         if nombre not in graficos:
@@ -48,25 +47,27 @@ def alternar_grafico(nombre):
 def activar_bipolar():
     # Activar o desactivar las casillas extras
     if boton_bipolar_var.get():  # Si se selecciona el botón Bipolar
-        entradas["Voltaje 2(kV)"].config(state="normal")
+        entradas["Voltaje 2 (kV)"].config(state="normal")
         entradas["Área 2 (mm²)"].config(state="normal")
         entradas["Posición en x 2 (m)"].config(state="normal")
         entradas["Posición en y 2 (m)"].config(state="normal")
         entradas["factor conductor 2"].config(state="normal")
+        entradas["Movilidad iónica 2 (m2/kVs)"].config(state="normal")
+        entradas["Recombinación (μm^3/s)"].config(state="normal")
+        entradas["Jp (nA/m^2)"].config(state="disabled")
+        # Verifica si alguna casilla está activada
+        boton_Spd.config(state=tk.NORMAL)
     else:  # Si el botón Bipolar está desmarcado
         # Eliminar el contenido actual de las casillas
-        entrada_posicion_x2.delete(0, tk.END)  
-        entrada_posicion_y2.delete(0, tk.END)  
-    
-        # Insertar valores vacíos (o None si prefieres)
-        entrada_posicion_x2.insert(0, "")  
-        entrada_posicion_y2.insert(0, "")
-
-        entradas["Voltaje 2(kV)"].config(state="disabled")
+        entradas["Voltaje 2 (kV)"].config(state="disabled")
         entradas["Área 2 (mm²)"].config(state="disabled")
         entradas["Posición en x 2 (m)"].config(state="disabled")
         entradas["Posición en y 2 (m)"].config(state="disabled")
         entradas["factor conductor 2"].config(state="disabled")
+        entradas["Movilidad iónica 2 (m2/kVs)"].config(state="disabled")
+        entradas["Recombinación (μm^3/s)"].config(state="disabled")
+        entradas["Jp (nA/m^2)"].config(state="normal")
+        boton_Spd.config(state=tk.DISABLED)
 
         
         # Establecer x2 y y2 como None para que no se grafiquen
@@ -147,11 +148,11 @@ def ejecutar_script():
     params_json = json.dumps(params)
     if boton_bipolar_var.get():
         # Ejecutar el script bipolar con los parámetros
-        subprocess.run(["python", "bipolar.py", params_json], check=True)
+        subprocess.run(["python", "script_ejecucion_bip.py", params_json], check=True)
         messagebox.showinfo("Éxito", "El archivo bipolar.py se ejecutó correctamente.")
     else:
         # Ejecutar el script unipolar con los parámetros
-        subprocess.run(["python", "script_ejecucion.py", params_json], check=True)
+        subprocess.run(["python", "script_ejecucion_uni.py", params_json], check=True)
         messagebox.showinfo("Éxito", "El archivo unipolar.py se ejecutó correctamente.")
     
 
@@ -198,7 +199,7 @@ def validar_campos_y_ejecutar():
                 return
             continue  # Saltar el resto de la validación para este campo
         # Validar "Modo (str)" para aceptar solo "uniforme" o "gradiente"
-        if nombre == "Periferia conductor":
+        if nombre == "Interior conductor":
             if valor.isdigit():
                 messagebox.showwarning(
                     "Advertencia", f"El valor en '{nombre}' no puede ser numérico. Debe ser 'si', 'no' o 'noV'."
@@ -236,6 +237,27 @@ def validar_campos_y_ejecutar():
 
 # Inicialización global de canvas
 canvas = None
+# Llamar al método al iniciar la ventana para mostrar un gráfico por defecto
+def inicializar_grafico():
+    # Valores por defecto
+    x = float(entrada_posicion_x.get())
+    y = float(entrada_posicion_y.get())
+
+    # Validar datos de dimensionamiento
+    ancho_mitad = float(entradas["Ancho (m)"].get())
+    altura_total = float(entradas["Altura (m)"].get())
+    cantidad = float(entradas["Subconductores"].get())
+    separacion = entrada_separacion
+
+
+    # Crear una figura inicial
+    fig, ax = plt.subplots(figsize=(5, 5))
+    xs = [x]
+    ys = [y]
+
+    # Graficar puntos iniciales
+    graficar_puntos(fig, ax, xs, ys, cantidad, separacion, ancho_mitad, altura_total)
+
 
 def validar_campos_y_graficar():
     # Cerrar todas las figuras de Matplotlib previas si existen
@@ -277,7 +299,7 @@ def validar_campos_y_graficar():
         if y > altura_total:
             messagebox.showwarning("Advertencia", f"La posición 'y' ({y} m) no puede superar la altura total ({altura_total} m).")
             return
-        if y2 and y2 > altura_total:  # Solo si x2 y y2 no son None
+        if y2 and abs(y2) > altura_total:  # Solo si x2 y y2 no son None
             messagebox.showwarning("Advertencia", f"La posición 'y2' ({y2} m) no puede superar la altura total ({altura_total} m).")
             return
 
@@ -304,7 +326,7 @@ def validar_campos_y_graficar():
     fig, ax = plt.subplots(figsize=(5, 5))
 
     # Condicional para graficar solo si x2 y y2 no son None
-    if x2 is not None and y2 is not None:
+    if x2 is not None and y2 is not None and boton_bipolar_var.get():
         xs = [x, x2]
         ys = [y, y2]
     else:
@@ -332,8 +354,11 @@ def graficar_puntos(fig, ax, x, y, cantidad, separacion, ancho_mitad, altura_tot
         # Verificar si los puntos están dentro de los límites
         if abs(x[j]) > ancho_mitad:
             messagebox.showwarning("Advertencia", f"El punto ({x[j]}, {y[j]}) excede el rango horizontal ({-ancho_mitad}, {ancho_mitad}).")
-        if n == 1:
-            ax.plot(x[j], y[j], 'o', color='blue', label="Conductor")
+        elif n == 1:
+            if len(x) == 1:
+                ax.plot(x[j], y[j], 'o', color=colors[j], label=f"Conductor")
+            else:
+                ax.plot(x[j], y[j], 'o', color=colors[j], label=f"Conductor {pos[j]}")
         elif n >= 2:
             radio = ((separacion / 100) / 2) * (1 / math.sin(math.pi / n))
             puntos = generar_poligono(n, radio, x[j], y[j])
@@ -350,7 +375,7 @@ def graficar_puntos(fig, ax, x, y, cantidad, separacion, ancho_mitad, altura_tot
 
     # Crear y mostrar el nuevo canvas
     canvas = FigureCanvasTkAgg(fig, ventana)  # Crear nuevo canvas
-    canvas.get_tk_widget().place(x=600, y=20)  # Mostrar el nuevo gráfico
+    canvas.get_tk_widget().place(x=650, y=20)  # Mostrar el nuevo gráfico
 
 
 
@@ -409,9 +434,11 @@ def verificar_separacion(*args):
             entrada_separacion.config(state="normal")
         else:
             entrada_separacion.delete(0, tk.END)
+            entrada_separacion.insert(0, "0")
             entrada_separacion.config(state="disabled")
     except ValueError:  # Si la entrada no es un número
         entrada_separacion.delete(0, tk.END)
+        entrada_separacion.insert(0, "0")
         entrada_separacion.config(state="disabled")
 
 def verificar_modo_viento(*args):
@@ -421,10 +448,13 @@ def verificar_modo_viento(*args):
             entrada_rugosidad_terreno.config(state="normal")
         else:
             entrada_rugosidad_terreno.delete(0, tk.END)
+            entrada_rugosidad_terreno.insert(0, "0.2")
             entrada_rugosidad_terreno.config(state="disabled")
     except ValueError:  # Si la entrada es un número
         entrada_rugosidad_terreno.delete(0, tk.END)
+        entrada_rugosidad_terreno.insert(0, "0.2")
         entrada_rugosidad_terreno.config(state="disabled")
+
 
 def validar_natural(texto, nombre):
     """Valida que el texto ingresado sea un número natural."""
@@ -433,43 +463,137 @@ def validar_natural(texto, nombre):
     else:
         messagebox.showwarning("Valor inválido", f"La casilla '{nombre}' solo acepta números naturales (1, 2, 3...).")
         return False
+def validar_uno(texto, nombre):
+    """Valida que el texto ingresado sea un número real entre 0 y 1."""
+    if texto == "":  # Permitir casillas vacías mientras el usuario escribe
+        return True
+    try:
+        valor = float(texto)  # Intentar convertir el texto a flotante
+        if 0 <= valor <= 1:  # Verificar si está en el rango permitido
+            return True
+        else:
+            raise ValueError  # Forzar excepción si el valor no está en rango
+    except ValueError:
+        # Mostrar advertencia solo una vez
+        messagebox.showwarning(
+            "Valor inválido",
+            f"La casilla '{nombre}' solo acepta números reales entre 0 y 1."
+        )
+        return False
     
+def cerrar_programa():
+    # Confirmación para evitar cierres accidentales
+    if messagebox.askokcancel("Salir", "¿Estás seguro de que quieres salir?"):
+        # Liberar recursos, cerrar gráficos
+        plt.close('all')
+        # Terminar el programa
+        if ventana.winfo_exists():  # Verifica si la ventana aún existe
+            ventana.destroy()
+
+
 # Crear la ventana principal
 ventana = tk.Tk()
 ventana.title("Ajuste de parámetros")
 ventana.geometry("1200x700")
 
+# Diccionario con explicaciones de los parámetros
+explicaciones = {
+    "Voltaje (kV)": "Voltaje aplicado al conductor, medido en kilovoltios (kV).",
+    "Área (mm²)": "Sección transversal del conductor, medida en milímetros cuadrados.",
+    "Posición en x (m)": "Posición horizontal del conductor 1 en metros.",
+    "Posición en y (m)": "Posición vertical del conductor 1 en metros.",
+    "Posición en x 2 (m)": "Posición horizontal del conductor 2 en metros.",
+    "Posición en y 2 (m)": "Posición vertical del conductor 2 en metros.",
+    "factor conductor": "Factor de corrección para las características del conductor 2.",
+    "factor conductor 2": "Factor de corrección para las características del conductor 2.",
+    "Subconductores": "Número de subconductores usados en el sistema.",
+    "Separación (cm)": "Distancia entre subconductores, medida en centímetros.",
+    "Voltaje 2 (kV)": "Voltaje aplicado al conductor secundario en kilovoltios (kV).",
+    "Área 2 (mm²)": "Sección transversal del segundo conductor.",
+    "Recombinación (μm^3/s)": "Tasa de recombinación del material, medida en micrómetros cúbicos por segundo.",
+    "Jp (nA/m^2)": "Densidad de corriente de polarización, medida en nanoamperios por metro cuadrado.",
+    "Movilidad iónica (m2/kVs)": "Movilidad de iones en el sistema.",
+    "Temperatura (°C)": "Temperatura ambiente en grados Celsius.",
+    "Presión (kPa)": "Presión del sistema en kilopascales.",
+    "Viento x (m/s)": "Componente horizontal de la velocidad del viento.",
+    "Viento y (m/s)": "Componente vertical de la velocidad del viento.",
+    "Modo (str)": "Modo de operación del sistema.",
+    "Rugosidad terreno": "Coeficiente que describe la rugosidad del terreno.",
+    "Interior conductor": "Indica si el interior del conductor está activado.",
+    "Gráficos": "Seleccione algun grafico para poder mostrar  en pantalla",
+    "Ancho (m)": "Semi ancho del entorno en el  que se encuentran los condcutores",
+    "Altura (m)": "Altura total del entorno en el que se encuentran los conductores",
+    "nodos x": "Cantidad total de nodos en dirección horizontal",
+    "nodos y": "Cantidad total de nodos en dirección vertical",
+    "Medición (m)": "Altura en metros en donde se realizará el cálculo del campo eléctrico y la densidad de corriente iónica",
+    "Max iter rho": "Máxima cantidad de iteraciones para calcular la densidad de carga en el espacio",
+    "Max iter V": "Máxima cantidad de iteraciones para calcular el  potencial en el espacio",
+    "Max iter Gob": "Máxima cantidad de iteraciones para el algoritmo principal",
+}
+# Configurar una fuente más pequeña para el botón
+fuente_boton = ("Arial", 6, "bold")  # Tamaño 6 para reducir altura
+# Función para mostrar una ventana emergente con la explicación
+def mostrar_explicacion(parametro):
+    if parametro in explicaciones:
+        # Crear una ventana emergente
+        ventana_emergente = tk.Toplevel(ventana)
+        ventana_emergente.title(f"Explicación: {parametro}")
+        ventana_emergente.geometry("400x200")
+        
+        # Agregar el texto de explicación
+        texto = tk.Label(
+            ventana_emergente,
+            text=explicaciones[parametro],
+            wraplength=350,
+            justify="left",
+            padx=10,
+            pady=10
+        )
+        texto.pack(expand=True, fill="both")
+        
+        # Botón para cerrar la ventana emergente
+        boton_cerrar = ttk.Button(
+            ventana_emergente,
+            text="Cerrar",
+            command=ventana_emergente.destroy
+        )
+        boton_cerrar.pack(pady=10)
+
 # Contenedores principales
 secciones = {
     "Características de los conductores": [
         ("Voltaje (kV)", "400"),
-        ("Área (mm²)", "100"), 
-        ("Posición en x (m)", "0"), 
+        ("Área (mm²)", "100"),
+        ("Posición en x (m)", "0"),
         ("Posición en y (m)", "5"),
         ("factor conductor", "1"),
-        ("Cantidad", ""), 
+        ("Subconductores", "1"),
         ("Separación (cm)", "0"),
-        ("Voltaje 2(kV)", "-400"), # Agregar nuevo campo (deshabilitado inicialmente)
+        ("Voltaje 2 (kV)", "-400"),
         ("Área 2 (mm²)", "100"),
-        ("Posición en x 2 (m)", "0"), 
+        ("Posición en x 2 (m)", "0"),
         ("Posición en y 2 (m)", "5"),
         ("factor conductor 2", "1"),
+        ("Recombinación (μm^3/s)", "1.8"),
         ("Jp (nA/m^2)", "1988e-8"),
-        ("Tol Jp", "1e-2")
     ],
     "Características ambientales": [
         ("Movilidad iónica (m2/kVs)", "0.15"),
-        ("Temperatura (°C)", "25"), 
-        ("Presión (Pa)", "110"),  
+        ("Movilidad iónica 2 (m2/kVs)", "0.15"),
+        ("Temperatura (°C)", "25"),
+        ("Presión (kPa)", "110"),
         ("Viento x (m/s)", "0"),
         ("Viento y (m/s)", "0"),
-        ("Modo (str)", "uniforme"), 
+        ("Modo (str)", "uniforme"),
         ("Rugosidad terreno", "0.2"),
         ("Interior conductor", "si")
     ]
 }
 
 entradas = {}
+opciones_areas = ["50", "70", "95", "120", "150", "185", "240", "300", "400", "500", "630"]  # Áreas en mm²
+opciones_modo = ["uniforme",  "gradiente"]
+opciones_condct = ["si", "no", "noV"]
 for i, (seccion, campos) in enumerate(secciones.items()):
     if seccion == "Características de los conductores":
         # Marco contenedor para incluir título y marco decorado
@@ -488,33 +612,63 @@ for i, (seccion, campos) in enumerate(secciones.items()):
         # Marco decorado
         marco = tk.Frame(
             marco_contenedor,
-            highlightthickness=3,           # Grosor del borde
-            highlightbackground="gray",    # Color del borde sin enfoque
-            highlightcolor="green",        # Color del borde con enfoque
-            bg="lightgray"                 # Fondo del marco
+            highlightthickness=3,
+            highlightbackground="gray",
+            highlightcolor="green",
+            bg="lightgray"
         )
         marco.grid(row=1, column=0, sticky="w")
 
         # Organizar las casillas en dos columnas
-        for j, (nombre, valor_defecto) in enumerate(campos[:7]):  # Las primeras 7 casillas
+        for j, (nombre, valor_defecto) in enumerate(campos[:7]):
             ttk.Label(marco, text=nombre).grid(row=j, column=0, sticky="w", padx=5, pady=2)
-            entrada = ttk.Entry(marco)
-            entrada.insert(0, valor_defecto)
+
+            # Usar Combobox para los campos de área
+            if "Área" in nombre:
+                entrada = ttk.Combobox(marco, values=opciones_areas, state="readonly")
+                entrada.set(valor_defecto)  # Valor por defecto
+            else:
+                entrada = ttk.Entry(marco)
+                entrada.insert(0, valor_defecto)
+
             entrada.grid(row=j, column=1, padx=5, pady=2)
             entradas[nombre] = entrada
+            # Botón de ayuda
+            boton_ayuda = ttk.Button(marco, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
+            boton_ayuda.grid(row=j, column=2, padx=2, pady=1)
+            # Aplicar fuente personalizada al botón
+            boton_ayuda.configure(style="Ayuda.TButton")
+            # Crear un estilo para el botón
+            style = ttk.Style()
+            style.configure("Ayuda.TButton", font=fuente_boton, padding=(2, 2))  # Padding interno reducido
             # Deshabilitar las casillas extra inicialmente
-            if "2" in nombre and nombre != "Jp (nA/m^2)":
+            if "2" in nombre and nombre != "Jp (nA/m^2)" or nombre == "Recombinación (μm^3/s)":
                 entrada.config(state="disabled")
 
         # Las casillas adicionales en la segunda columna
         for j, (nombre, valor_defecto) in enumerate(campos[7:], start=0):
-            ttk.Label(marco, text=nombre).grid(row=j, column=2, sticky="w", padx=5, pady=2)
-            entrada = ttk.Entry(marco)
-            entrada.insert(0, valor_defecto)
-            entrada.grid(row=j, column=3, padx=5, pady=2)
+            ttk.Label(marco, text=nombre).grid(row=j, column=3, sticky="w", padx=5, pady=2)
+
+            # Usar Combobox para los campos de área
+            if "Área" in nombre:
+                entrada = ttk.Combobox(marco, values=opciones_areas, state="readonly")
+                entrada.set(valor_defecto)  # Valor por defecto
+            else:
+                entrada = ttk.Entry(marco)
+                entrada.insert(0, valor_defecto)
+
+            entrada.grid(row=j, column=4, padx=5, pady=2)
             entradas[nombre] = entrada
+            # Botón de ayuda
+            boton_ayuda = ttk.Button(marco, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
+            boton_ayuda.grid(row=j, column=5, padx=2, pady=1)
+            # Aplicar fuente personalizada al botón
+            boton_ayuda.configure(style="Ayuda.TButton")
+            # Crear un estilo para el botón
+            style = ttk.Style()
+            style.configure("Ayuda.TButton", font=fuente_boton, padding=(2, 2))  # Padding interno reducido
             # Deshabilitar las casillas extra inicialmente
-            if "2" in nombre and nombre != "Jp (nA/m^2)":
+            if "2" in nombre and nombre != "Jp (nA/m^2)" or nombre == "Recombinación (μm^3/s)":
                 entrada.config(state="disabled")
     else:
         # Para las otras secciones
@@ -523,10 +677,16 @@ for i, (seccion, campos) in enumerate(secciones.items()):
 
         for j, (nombre, valor_defecto) in enumerate(campos):
             ttk.Label(marco, text=nombre).grid(row=j, column=0, sticky="w", padx=5, pady=2)
-            entrada = ttk.Entry(marco)
-            entrada.insert(0, valor_defecto)
+            # Usar Combobox para los campos de modo
+            if "Modo" in nombre:
+                entrada = ttk.Combobox(marco, values=opciones_modo, state="readonly")
+                entrada.set(valor_defecto)  # Valor por defecto
+            else:
+                entrada = ttk.Entry(marco)
+                entrada.insert(0, valor_defecto)
             entrada.grid(row=j, column=1, padx=5, pady=2)
             entradas[nombre] = entrada
+            
 
 # Crear un contenedor para las secciones
 marco_contenedor = ttk.Frame(ventana)
@@ -541,14 +701,34 @@ marco_ambientales = tk.Frame(
     bg="lightgray"                  # Fondo del marco
 )
 marco_ambientales.grid(row=0, column=0, padx=10, pady=5, sticky="w")
-ttk.Label(marco_ambientales, text="Características ambientales", background="lightblue").grid(row=0, column=0, columnspan=2, sticky="w")
+# Definir la fuente personalizada
+fuente_titulo = font.Font(family="Arial", size=9, weight="bold")
+ttk.Label(marco_ambientales, text="Características ambientales", background="lightblue",font=fuente_titulo).grid(row=0, column=0, columnspan=2, sticky="w")
 
 for j, (nombre, valor_defecto) in enumerate(secciones["Características ambientales"]):
     ttk.Label(marco_ambientales, text=nombre).grid(row=j + 1, column=0, sticky="w", padx=5, pady=2)
-    entrada = ttk.Entry(marco_ambientales)
-    entrada.insert(0, valor_defecto)
+    # Usar Combobox para los campos de modo
+    if "Modo" in nombre:
+        entrada = ttk.Combobox(marco_ambientales, values=opciones_modo, state="readonly")
+        entrada.set(valor_defecto)  # Valor por defecto
+    elif "Interior" in nombre:
+        entrada = ttk.Combobox(marco_ambientales, values=opciones_condct, state="readonly")
+        entrada.set(valor_defecto)  # Valor por defecto
+    else:
+        entrada = ttk.Entry(marco_ambientales)
+        entrada.insert(0, valor_defecto)
     entrada.grid(row=j + 1, column=1, padx=5, pady=2)
     entradas[nombre] = entrada
+    boton_ayuda = ttk.Button(marco_ambientales, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
+    boton_ayuda.grid(row=j+1, column=2, padx=2, pady=1)
+    # Aplicar fuente personalizada al botón
+    boton_ayuda.configure(style="Ayuda.TButton")
+    # Crear un estilo para el botón
+    style = ttk.Style()
+    style.configure("Ayuda.TButton", font=fuente_boton, padding=(2, 2))  # Padding interno reducido
+    # Deshabilitar las casillas extra inicialmente
+    if nombre == "Movilidad iónica 2 (m2/kVs)":
+        entradas[nombre].config(state="disabled")
 
 # Contenedor para "Dimensionamiento" e "Iteraciones" (subcolumna)
 marco_segunda_columna = ttk.Frame(marco_contenedor)
@@ -563,7 +743,7 @@ marco_dimensionamiento = tk.Frame(
     bg="lightgray"
 )
 marco_dimensionamiento.grid(row=0, column=0, padx=5, pady=(0, 2), sticky="w")  # Reduce espacio inferior con pady=(0, 2)
-ttk.Label(marco_dimensionamiento, text="Dimensionamiento & Discretización", background="lightgreen").grid(row=0, column=0, columnspan=2, sticky="w")
+ttk.Label(marco_dimensionamiento, text="Dimensionamiento & Discretización", background="lightgreen", font=fuente_titulo).grid(row=0, column=0, columnspan=2, sticky="w")
 
 campos_dimensionamiento = [
     ("Ancho (m)", "5"),
@@ -578,6 +758,14 @@ for i, (nombre, valor_defecto) in enumerate(campos_dimensionamiento):
     entrada.insert(0, valor_defecto)
     entrada.grid(row=i + 1, column=1, padx=5, pady=2)
     entradas[nombre] = entrada
+    # Botón de ayuda
+    boton_ayuda = ttk.Button(marco_dimensionamiento, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
+    boton_ayuda.grid(row=i+1, column=2, padx=2, pady=1)
+    # Aplicar fuente personalizada al botón
+    boton_ayuda.configure(style="Ayuda.TButton")
+    # Crear un estilo para el botón
+    style = ttk.Style()
+    style.configure("Ayuda.TButton", font=fuente_boton, padding=(2, 2))  # Padding interno reducido
 
 # Parte de "Iteraciones"
 marco_iteracion = tk.Frame(
@@ -588,7 +776,7 @@ marco_iteracion = tk.Frame(
     bg="lightgray"
 )
 marco_iteracion.grid(row=1, column=0, padx=5, pady=(2, 0), sticky="w")  # Reduce espacio superior con pady=(2, 0)
-ttk.Label(marco_iteracion, text="Iteraciones", background="lightcoral").grid(row=0, column=0, columnspan=2, sticky="w")
+ttk.Label(marco_iteracion, text="Iteraciones", background="lightcoral", font=fuente_titulo).grid(row=0, column=0, columnspan=2, sticky="w")
 
 campos_iteraciones = [
     ("Max iter rho", "400"),
@@ -601,10 +789,18 @@ for i, (nombre, valor_defecto) in enumerate(campos_iteraciones):
     entrada.insert(0, valor_defecto)
     entrada.grid(row=i + 1, column=1, padx=5, pady=2)
     entradas[nombre] = entrada
+    # Botón de ayuda
+    boton_ayuda = ttk.Button(marco_iteracion, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
+    boton_ayuda.grid(row=i+1, column=2, padx=2, pady=1)
+    # Aplicar fuente personalizada al botón
+    boton_ayuda.configure(style="Ayuda.TButton")
+    # Crear un estilo para el botón
+    style = ttk.Style()
+    style.configure("Ayuda.TButton", font=fuente_boton, padding=(2, 2))  # Padding interno reducido
 
 
 # Variables específicas
-entrada_cantidad = entradas["Cantidad"]
+entrada_cantidad = entradas["Subconductores"]
 entrada_separacion = entradas["Separación (cm)"]
 entrada_posicion_x = entradas["Posición en x (m)"]
 entrada_posicion_y = entradas["Posición en y (m)"]
@@ -615,11 +811,14 @@ entrada_posicion_y2 =  entradas["Posición en y 2 (m)"]
 
 # Registrar la función de validación
 validacion_natural = ventana.register(lambda texto, nombre: validar_natural(texto, nombre))
+validacion_uno = ventana.register(lambda texto, nombre: validar_uno(texto, nombre))
 # Configurar validaciones con nombres específicos
-entrada_cantidad.config(validate="key", validatecommand=(validacion_natural, "%P", "Cantidad"))
+entrada_cantidad.config(validate="key", validatecommand=(validacion_natural, "%P", "Subconductores"))
 entradas["Max iter rho"].config(validate="key", validatecommand=(validacion_natural, "%P", "Max iter rho"))
 entradas["Max iter V"].config(validate="key", validatecommand=(validacion_natural, "%P", "Max iter V"))
 entradas["Max iter Gob"].config(validate="key", validatecommand=(validacion_natural, "%P", "Max iter Gob"))
+entradas["factor conductor"].config(validate="key", validatecommand=(validacion_uno, "%P", "factor conductor"))
+entradas["factor conductor 2"].config(validate="key", validatecommand=(validacion_uno, "%P", "factor conductor 2"))
 
 entrada_cantidad.bind("<KeyRelease>", verificar_separacion)  # Asociar el evento de escritura
 entrada_separacion.config(state="disabled")  # Desactivada inicialmente
@@ -627,7 +826,7 @@ entrada_separacion.config(state="disabled")  # Desactivada inicialmente
 # Validación coeficiente rugosidad piso para  viento
 entrada_modo = entradas["Modo (str)"]
 entrada_rugosidad_terreno = entradas["Rugosidad terreno"]
-entrada_modo.bind("<KeyRelease>", verificar_modo_viento)  # Asociar el evento de escritura
+entrada_modo.bind("<<ComboboxSelected>>", verificar_modo_viento) # Asociar evento de selección al Combobox
 entrada_rugosidad_terreno.config(state='disabled') # Desactivada inicialmente
 
 # Botones principales
@@ -639,31 +838,34 @@ ttk.Button(marco_botones, text="Guardar", command=guardar_datos).grid(row=0, col
 ttk.Button(marco_botones, text="Limpiar", command=limpiar_campos).grid(row=0, column=1, padx=5)
 ttk.Button(marco_botones, text="Graficar", command=validar_campos_y_graficar).grid(row=0, column=2, padx=5)
 ttk.Button(marco_botones, text="Ejecutar", command=validar_campos_y_ejecutar).grid(row=0, column=3, padx=5)
+ttk.Button(marco_botones, text="Salir", command=cerrar_programa).grid(row=0, column=4, padx=5)
+ventana.protocol("WM_DELETE_WINDOW", cerrar_programa)  # Para el botón de cerrar ventana
+
 
 # Crear el botón Bipolar inmediatamente a la derecha
 boton_bipolar_var = tk.BooleanVar()  # Variable para controlar el estado del botón
 boton_bipolar = ttk.Checkbutton(marco_botones, text="Bipolar", variable=boton_bipolar_var, command=activar_bipolar)
-boton_bipolar.grid(row=0, column=4, padx=5, pady=10)  # Ubicado justo después de los botones principales
+boton_bipolar.grid(row=0, column=5, padx=5, pady=10)  # Ubicado justo después de los botones principales
 
 # Añadir un nuevo botón "Auto red" inmediatamente a la derecha del Bipolar
 boton_auto_red_var = tk.BooleanVar()  # Variable para controlar el estado del botón
 boton_auto_red = ttk.Checkbutton(marco_botones, text="Auto red", variable=boton_auto_red_var, command=activar_auto_red)
-boton_auto_red.grid(row=0, column=5, padx=5, pady=10)  # Ubicado justo al lado del Bipolar
+boton_auto_red.grid(row=0, column=6, padx=5, pady=10)  # Ubicado justo al lado del Bipolar
 
 
 # Botones de gráficos
 marco_contenedor = tk.Frame(ventana)
 marco_contenedor.grid(row=len(secciones) + 3, column=0, columnspan=2, padx=10, pady=5)
-
+'''
 # Título destacado
 titulo = ttk.Label(
     marco_contenedor,
     text="Gráficos",
     background="lightblue",
-    font=("Arial", 8, "bold")
+    font=("Arial", 9, "bold")
 )
 titulo.grid(row=0, column=0, sticky="w", padx=5, pady=(0, 5))
-
+'''
 # Marco decorado
 marco_graficos = tk.Frame(
     marco_contenedor,
@@ -673,17 +875,34 @@ marco_graficos = tk.Frame(
     bg="lightgray"                 # Fondo del marco
 )
 marco_graficos.grid(row=1, column=0, sticky="w", padx=10, pady=5)
-
-
+ttk.Label(marco_graficos, text="Gráficos", background="lightblue", font=fuente_titulo).grid(row=0, column=0, sticky="w")
+# Botón de ayuda
+boton_ayuda = ttk.Button(
+    marco_graficos,
+    text="?",
+    width=2,
+    command=lambda: mostrar_explicacion("Gráficos"))  # Usar lambda para diferir la ejecución)
+boton_ayuda.grid(row=0, column=1, padx=2, pady=1)
+# Aplicar fuente personalizada al botón
+boton_ayuda.configure(style="Ayuda.TButton")
+# Crear un estilo para el botón
+style = ttk.Style()
+style.configure("Ayuda.TButton", font=fuente_boton, padding=(2, 2))  # Padding interno reducido
+boton_Spd = None  # Variable para almacenar el botón de SPd
 # Distribuir botones en 2 filas y 4 columnas
-num_columnas = 4  # Número de columnas deseadas
+num_columnas = 5  # Número de columnas deseadas
 for i, grafico in enumerate(estados_graficos):
     fila = i // num_columnas  # División entera para obtener la fila
     columna = i % num_columnas  # Resto de la división para obtener la columna
-    ttk.Button(marco_graficos, text=grafico, command=lambda g=grafico: alternar_grafico(g)).grid(row=fila, column=columna, padx=5, pady=5)
-
+    boton = ttk.Button(marco_graficos, text=grafico, command=lambda g=grafico: alternar_grafico(g))
+    boton.grid(row=fila+1, column=columna, padx=5, pady=5)
+    # Guardar referencia al botón "SPd"
+    if grafico == "SPd":
+        boton_Spd = boton
+        boton_Spd.config(state=tk.DISABLED)  # Iniciar deshabilitado
 
 # Iniciar la aplicación
+inicializar_grafico()
 ventana.mainloop()
 
 
