@@ -14,6 +14,14 @@ if __name__ == "__main__":
     import pandas as pd
     import os
     ########## FUNCIONES ###############
+    def pressure_height(altura,tempe):
+        P0  = 101325 # Pa
+        M = 0.029 # Kg/mol
+        g =  9.8 # m/s^2
+        R0 = 8.314 # J/mol K
+        P = P0*np.e**(-g*M*altura/(R0*tempe))
+        return P/1000 # en kPa
+
     def mod(z1,z2):
         return np.sqrt((z1[0]-z2[0])**2 + (z1[1]-z2[1])**2)
     
@@ -72,6 +80,15 @@ if __name__ == "__main__":
             Distancia geométrica media (D_eq).
         """
         return (ma.prod(lados))**(1 / len(lados))
+    def distancia_equivalente_2(sepa, numero):
+        """
+        Calcula la distancia geométrica media (D_eq) a partir de una lista de lados.
+        Parámetros:
+            sepa: Separación subconductores vecinos
+        Retorna:
+            Distancia geométrica media (D_eq).
+        """
+        return sepa/(2*np.sin(np.pi/numero))
 
     def radio_eq(radio, numero, distancia):
         """
@@ -83,11 +100,12 @@ if __name__ == "__main__":
         Retorna:
             Radio equivalente del conductor.
         """
-        if numero==1:
-            r_eq = radio
-        else:
-            r_eq = distancia * (radio / distancia)**(1 / numero)
-        return 1.09 * r_eq if numero == 4 else r_eq
+        #if numero==1:
+        #    r_eq = radio
+        #else:
+        #    r_eq = distancia * (radio / distancia)**(1 / numero)
+        #return 1.09 * r_eq if numero == 4 else r_eq
+        return (radio*numero*distancia**(numero-1))**(1/numero)
     
     def calculo_radio_eq(numero, area_sub, sepa, conversion=1, es_mcm=False, es_cm=False):
         """
@@ -102,12 +120,15 @@ if __name__ == "__main__":
         Retorna:
             Tuple con el radio equivalente y el radio individual.
         """
-        lados = calcula_lados(numero, sepa)
-        distancia = distancia_equivalente(lados)
+        #lados = calcula_lados(numero, sepa)
+        #distancia = distancia_equivalente(lados)
+        distancia_e = distancia_equivalente_2(sepa, numero)
         radio = convierte_a_radio(area_sub, conversion, es_mcm)
         if es_cm:
             radio /= 10  # Convertir de mm a cm si es necesario
-        radio_equi = radio_eq(radio, numero, distancia)
+        radio_equi = radio_eq(radio, numero, distancia_e)
+        if radio_equi==0:
+            radio_equi = radio
         return radio_equi, radio
     
         # Encontrar los índices más cercanos
@@ -213,6 +234,29 @@ if __name__ == "__main__":
             print('in_condct escogido es inválido')
         return malla
     
+    def Hay_corona(Vol, Sep, r, delta, m, g0):
+        '''
+        Vol: en kV
+        Sep: en cm
+        r: en cm
+        '''
+        Ev= grad_sup(g0, m, delta, r)
+        ev = Vol_crit(Ev, Sep, r)
+        if ev <= np.abs(Vol):
+            print(f"{Vol} kV >= {ev} kV, hay efecto corona")
+            return True
+        else:
+            print(f"{Vol} kV < {ev} kV, no hay efecto corona")
+            return False
+        
+    def grad_sup(g0, m, delta, r):
+        Ev = g0*delta*m*(1+0.301/np.sqrt(delta*r))
+        return  Ev
+    
+    def Vol_crit(Ev, Sep, r):
+        ev = Ev*r*np.log(Sep/r)
+        return ev
+
     def rhoA(Sx, Jp, b, a,  m_ind, d):
         # Cálculo condición de borde densidad de carga conductor energizado
         # Depende del valor de Jp
@@ -743,9 +787,13 @@ if __name__ == "__main__":
         Vmi, Vmi2 = potencial_electrostático(fixed_point, fixed_value, X, Y, R, 0, carga=Q, st='noV')
         return Vmi
 
-    def inicializar_densidad(Sx, Jp, mov, R, m, delta, nodosy, nodosx, posx_conductor, posy_conductor, con_condct='si', copiado='no'):
+    def inicializar_densidad(Sx, Jp, mov, R, m, delta, Vol, yco, g0, nodosy, nodosx, posx_conductor, posy_conductor, con_condct='si', copiado='no'):
         """Inicializa la densidad de carga y las condiciones de borde."""
-        rho_i = rhoA(Sx, Jp, mov, R, m, delta)
+        Corona = Hay_corona(Vol/1000, yco*100, R*100, delta, m, g0)
+        if Corona:
+            rho_i = rhoA(Sx, Jp, mov, R, m, delta)
+        else:
+            rho_i = 0
         rho_inicial = np.zeros((nodosy, nodosx), dtype=complex)
         rho_boundary = np.zeros_like(rho_inicial)
         rho_boundary = Dist_ValA(rho_boundary, rho_inicial, rho_i, posx_conductor, posy_conductor, in_condct=con_condct, copia=copiado)
@@ -793,7 +841,7 @@ if __name__ == "__main__":
         Campo_fin = [Edefx, Edefy, Edef]
         return Jave, Ji, Campo_ini, Campo_fin, Ei
 
-    def ejecutar_algoritmo(fixed_point, fixed_value, X, Y, R, Q, Sx, mov, m, delta, nodosy, nodosx, posx_conductor, posy_conductor,
+    def ejecutar_algoritmo(fixed_point, fixed_value, X, Y, R, Q, Sx, mov, m, delta, g0, nodosy, nodosx, posx_conductor, posy_conductor, yco,
                             dx, dy, windx, windy, max_iter_rho, max_iter, it_global, l, visualizacion, Jp_inicial,
                             tolerancia=[1-1e-5,1+1e-5], condct='si', copy='no', Muestra=False):
         """Ejecuta el algoritmo completo ajustando Jp hasta cumplir la condición de convergencia."""
@@ -807,7 +855,7 @@ if __name__ == "__main__":
             # Paso 1: Calcular potencial inicial
             Vmi = calcular_potencial_inicial(fixed_point, fixed_value, X, Y, R, Q)
             # Paso 2: Inicializar densidades
-            rho_inicial, rho_boundary, rho_i = inicializar_densidad(Sx, Jp, mov, R, m, delta, nodosy, nodosx, posx_conductor, posy_conductor)
+            rho_inicial, rho_boundary, rho_i = inicializar_densidad(Sx, Jp, mov, R, m, delta, fixed_value, yco, g0, nodosy, nodosx, posx_conductor, posy_conductor)
             # Paso 3: Iterar para calcular Vm y rho
             Vm, rho_n = iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, mov, windx, windy, max_iter_rho, max_iter,
                                         it_global, visu=visualizacion, con_condct=condct, copiado=copy, must=Muestra, fi = fi)
@@ -881,7 +929,9 @@ if __name__ == "__main__":
                 "Posición en y (m)": [y_coor],
                 "factor conductor": [m],
                 "Jp inicial (nA/m^2)": [Jp_inicial],
-                "Radio equivalente (cm)": [Req*100]
+                "Radio equivalente (cm)": [Req*100],
+                "Gradiente superficial crítico (kV/cm)": Evv,
+                "Potencial crítico corona (kV)": evv
             }
             df_conductores = pd.DataFrame(datos_conductores)
 
@@ -920,16 +970,16 @@ if __name__ == "__main__":
                 print("Hoja 'Campo y Corriente' añadida al archivo Excel.")
 
                 # Hoja de Características de los conductores
-                df_conductores.to_excel(writer, index=False, sheet_name="Características conductores")
-                print("Hoja 'Características de los conductores' añadida al archivo Excel.")
+                df_conductores.to_excel(writer, index=False, sheet_name="Conductores")
+                print("Hoja 'Conductores' añadida al archivo Excel.")
 
                 # Hoja de Características ambientales
-                df_ambientales.to_excel(writer, index=False, sheet_name="Características ambientales")
-                print("Hoja 'Características ambientales' añadida al archivo Excel.")
+                df_ambientales.to_excel(writer, index=False, sheet_name="Ambientales")
+                print("Hoja 'Ambientales' añadida al archivo Excel.")
 
                 # Hoja de Dimensionamiento y discretización
-                df_dimensionamiento.to_excel(writer, index=False, sheet_name="Dimensionamiento y discretización")
-                print("Hoja 'Dimensionamiento y discretización' añadida al archivo Excel.")
+                df_dimensionamiento.to_excel(writer, index=False, sheet_name="Dim y discr")
+                print("Hoja 'Dim y discr' añadida al archivo Excel.")
 
                 # Hoja de Iteraciones
                 df_iteraciones.to_excel(writer, index=False, sheet_name="Iteraciones")
@@ -987,7 +1037,10 @@ if __name__ == "__main__":
     nodosy = obtener_parametro(params["nodos y"], int)  # Número de nodos en y
     mov = float(params["Movilidad iónica (m2/kVs)"])/1000 # m2/Vs
     Tem = float(params["Temperatura (°C)"]) + 273 # kelvin
-    Pres = float(params["Presión (kPa)"]) # kPa
+    #Pres = float(params["Presión (kPa)"]) # kPa
+    altura = float(params["Altitud (m)"]) # m
+    Pres = pressure_height(altura, Tem) # kPa
+    print(f"la altura es {altura} y la presion es {Pres} kPa")
     viento_x = float(params["Viento x (m/s)"])
     viento_y = float(params["Viento y (m/s)"])
     modo = str(params["Modo (str)"])
@@ -1016,7 +1069,10 @@ if __name__ == "__main__":
     P0 =101.3 # (kPa) Presión del aire a nivel de mar
     T0= 298.15  # (Kelvin) Temperatura de 25°C  + 273.15
     delta = Pres*T0/(P0*Tem) # () densidad del aire
-    
+    g0 = 29.8 # kV/cm
+    Evv = grad_sup(g0, m, delta, Req*100) # kV/cm
+    evv = Vol_crit(Evv, y_coor*100, Req*100) # kV
+    print(f"potencial critico corona es {evv} kV y gradiente superficial critico es {Evv} kV/cm")
     epsilon0 = (1 / (36 * np.pi)) * 10**(-9)  # (F/m) permitividad del vacío
     K = 1 / (2 * np.pi * epsilon0)  # factor de multiplicación
     TolDev = 1e-2 # Tolerancia de convergencia de Jp
@@ -1083,8 +1139,8 @@ if __name__ == "__main__":
     V = [Vol]
     Q = np.dot(np.linalg.inv(P),V) # Se determinan las cargas de los conductores
 
-    Campo_ini, Vmi, rho_n, Vm, Vol_def, Campo_fin, Ei, Ji, Jave = ejecutar_algoritmo(fixed_point, fixed_value, X, Y, Req, Q, Sx, mov, m, delta, nodosy,
-                                                                            nodosx, posx_conductor, posy_conductor, dx, dy, windx, windy, max_iter_rho,
+    Campo_ini, Vmi, rho_n, Vm, Vol_def, Campo_fin, Ei, Ji, Jave = ejecutar_algoritmo(fixed_point, fixed_value, X, Y, Req, Q, Sx, mov, m, delta, g0, nodosy,
+                                                                            nodosx, posx_conductor, posy_conductor, y_coor, dx, dy, windx, windy, max_iter_rho,
                                                                                 max_iter, it_global, l, visualizacion, Jp_inicial=Jp_inicial,
                                                                                 tolerancia=Tolerancia, condct=in_condct, copy=copiado, Muestra=mostrar)
 
@@ -1111,7 +1167,7 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"Error al guardar la imagen: {e}")
 
-    def grafE(num, ruta, guarda=False):
+    def grafE(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
         #mod = np.sqrt(U**2+Ww**2)
         plt.quiver(X, Y, Exxini, Eyyini, Em, cmap='plasma', scale_units='xy')
@@ -1130,8 +1186,14 @@ if __name__ == "__main__":
         plt.ylabel('Distancia vertical (m)',fontsize=11)
         plt.tight_layout()
         guarda_graficos("Campo_electrostatico", ruta, guarda=guarda)
+        # Mostrar la figura si mostrar=True
+        if mostrar:
+            plt.show(block=False)  # Muestra la figura sin detener la ejecución
+        else:
+            plt.close()
+       
 
-    def grafV(num, ruta, guarda=False):
+    def grafV(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
         #plt.figure(figsize=(6, 6))
         #plt.contourf(X, Y, Vm, levels=200, cmap='plasma')
@@ -1148,38 +1210,75 @@ if __name__ == "__main__":
         plt.title('Potencial electrostático', fontsize=15)
         plt.tight_layout()
         guarda_graficos("Potencial_electrostatico", ruta, guarda=guarda)
+        # Mostrar la figura si mostrar=True
+        if mostrar:
+            plt.show(block=False)  # Muestra la figura sin detener la ejecución
+        else:
+            plt.close()
+       
 
-    def grafRho(num, ruta, guarda=False):
+    def grafRho(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
-        plt.pcolormesh(X, Y, rho_n, cmap='viridis', shading='auto',norm=LogNorm())
-        #plt.pcolormesh(X, Y, rho_n, cmap='viridis', shading='auto')
-        plt.xlabel('Distancia horizontal (m)',fontsize=11)
-        plt.ylabel('Distancia vertical (m)',fontsize=11)
-        plt.title('Densidad de carga final',fontsize=15)
-        # Añadir una barra de colores para mostrar la escala
-        cbar = plt.colorbar()
-        cbar.set_label(r'Densidad de carga $C/m^3$',fontsize=11)
+        
+        # Verificar si rho_n es una matriz de solo ceros
+        if not np.all(rho_n == 0):  # Si no todos los valores son cero
+            plt.pcolormesh(X, Y, rho_n, cmap='viridis', shading='auto', norm=LogNorm())
+            # Añadir una barra de colores para mostrar la escala
+            cbar = plt.colorbar()
+            cbar.set_label(r'Densidad de carga $C/m^3$', fontsize=11)
+        else:
+            plt.pcolormesh(X, Y, rho_n, cmap='viridis', shading='auto')
+        
+        plt.xlabel('Distancia horizontal (m)', fontsize=11)
+        plt.ylabel('Distancia vertical (m)', fontsize=11)
+        plt.title('Densidad de carga final', fontsize=15)
         plt.tight_layout()
+        
         guarda_graficos("Densidad_carga", ruta, guarda=guarda)
+        
+        # Mostrar la figura si mostrar=True
+        if mostrar:
+            plt.show(block=False)  # Muestra la figura sin detener la ejecución
+        else:
+            plt.close()
 
-    def grafVf(nm, ruta, guarda=False):
+        
+
+    def grafVf(nm, ruta, mostrar=False, guarda=False):
         plt.figure(nm)
-        #plt.imshow(Vm,extent=[x[0], x[-1], y[-1], y[0]], cmap='plasma', interpolation='none',norm=LogNorm())
-        plt.pcolormesh(X, Y, Vm/1000, cmap='plasma', shading='auto',norm=LogNorm())
-        plt.title('Potencial iónico',fontsize=15) 
-        plt.xlabel('Distancia horizontal (m)',fontsize=11)
-        plt.ylabel('Distancia vertical (m)',fontsize=11)
-        # Añadir una barra de colores para mostrar la escala
-        cbar = plt.colorbar()
-        cbar.set_label(r'Potencial iónico $kV$')
-        ticks = cbar.get_ticks()
-        # Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
-        cbar.set_ticks(ticks)
-        cbar.set_ticklabels([f'{tick:.1f}' for tick in ticks]) 
+        
+        # Verificar si Vm es una matriz de solo ceros
+        if not np.all(Vm == 0):  # Si no todos los valores son cero
+            plt.pcolormesh(X, Y, Vm/1000, cmap='plasma', shading='auto', norm=LogNorm())
+            # Añadir una barra de colores para mostrar la escala
+            cbar = plt.colorbar()
+            cbar.set_label(r'Potencial iónico $kV$')
+        else:
+            plt.pcolormesh(X, Y, Vm/1000, cmap='viridis', shading='auto')
+        
+        plt.title('Potencial iónico', fontsize=15)
+        plt.xlabel('Distancia horizontal (m)', fontsize=11)
+        plt.ylabel('Distancia vertical (m)', fontsize=11)
+        
+        # Si se dibujó la barra de colores, ajustar los ticks
+        if np.any(Vm != 0):
+            ticks = cbar.get_ticks()
+            # Cambiar las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
+            cbar.set_ticks(ticks)
+            cbar.set_ticklabels([f'{tick:.1f}' for tick in ticks])
+        
         plt.tight_layout()
         guarda_graficos("Potencial_ionico", ruta, guarda=guarda)
+        
+        # Mostrar la figura si mostrar=True
+        if mostrar:
+            plt.show(block=False)  # Muestra la figura sin detener la ejecución
+        else:
+            plt.close()
 
-    def grafVdef(num, ruta, guarda=False):
+        
+
+    def grafVdef(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
         #plt.imshow(Vm,extent=[x[0], x[-1], y[-1], y[0]], cmap='plasma', interpolation='none',norm=LogNorm())
         plt.pcolormesh(X, Y, Vol_def/1000, cmap='plasma', shading='auto',norm=LogNorm())
@@ -1195,8 +1294,14 @@ if __name__ == "__main__":
         cbar.set_ticklabels([f'{tick:.1f}' for tick in ticks]) 
         plt.tight_layout()
         guarda_graficos("Potencial_definitivo", ruta, guarda=guarda)
+        # Mostrar la figura si mostrar=True
+        if mostrar:
+            plt.show(block=False)  # Muestra la figura sin detener la ejecución
+        else:
+            plt.close()
+        
 
-    def grafEf(nm, ruta, guarda=False):
+    def grafEf(nm, ruta, mostrar=False, guarda=False):
         plt.figure(nm)
         # Graficar el campo vectorial 2D
         # Usar Edefx, Edefy para las componentes del campo eléctrico
@@ -1218,9 +1323,14 @@ if __name__ == "__main__":
         # Ajustar la disposición para evitar que los textos se solapen
         plt.tight_layout()
         guarda_graficos("Campo_definitivo", ruta, guarda=guarda)
+        # Mostrar la figura si mostrar=True
+        if mostrar:
+            plt.show(block=False)  # Muestra la figura sin detener la ejecución
+        else:
+            plt.close()
 
 
-    def grafJ1(num, ruta, guarda=False):
+    def grafJ1(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
         plt.plot(x[30:-30], Ji[30:-30]*(10**9))
         plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
@@ -1230,8 +1340,13 @@ if __name__ == "__main__":
         plt.legend([f'$J_p$ = {str(formatear_numero(np.round(Jave*(10**9),3)))} $nA/m^2$'])
         plt.grid(True)
         guarda_graficos("Corriente_nivel_piso", ruta, guarda=guarda)
+        # Mostrar la figura si mostrar=True
+        if mostrar:
+            plt.show(block=False)  # Muestra la figura sin detener la ejecución
+        else:
+            plt.close()
 
-    def grafE1(num, ruta, guarda=False):
+    def grafE1(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
         plt.plot(x[30:-30], Ei[30:-30]/1000)
         plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
@@ -1241,8 +1356,13 @@ if __name__ == "__main__":
         plt.legend([f'$|E|_a$ = {str(formatear_numero(np.round(np.mean(Ei/1000),3)))} kV'])
         plt.grid(True)
         guarda_graficos("Campo_nivel_piso", ruta, guarda=guarda)
+        # Mostrar la figura si mostrar=True
+        if mostrar:
+            plt.show(block=False)  # Muestra la figura sin detener la ejecución
+        else:
+            plt.close()
 
-    def grafSP(num, ruta, guarda=False):
+    def grafSP(num, ruta, mostrar=False, guarda=False):
         fig = plt.figure(11)
         #fig = plt.figure(figsize=(12, 12))  # Tamaño ajustado para los subgráficos
         # Subgráfico 1: Densidad de carga iónica
@@ -1280,33 +1400,47 @@ if __name__ == "__main__":
         # Ajustar diseño
         plt.tight_layout()
         guarda_graficos("Graficos_3d", ruta, guarda=guarda)
-    
+        # Mostrar la figura si mostrar=True
+        if mostrar:
+            plt.show(block=False)  # Muestra la figura sin detener la ejecución
+        else:
+            plt.close()
+        
+
     def show_plot(graf, ruta, guarda=False):
-        for i in graf:
-            if i == 'Eele':
-                grafE(1, ruta, guarda=guarda)
-            elif i == 'Vele':
-                grafV(2, ruta, guarda=guarda)
-            elif i == 'Rhof':
-                grafRho(3, ruta, guarda=guarda)
-            elif i == 'Vf':
-                grafVf(5, ruta, guarda=guarda)
-            elif i == 'Vdef':
-                grafVdef(6, ruta, guarda=guarda)
-            elif i == 'Ef':
-                grafEf(7, ruta, guarda=guarda)
-            elif i == 'J1':
-                grafJ1(9, ruta, guarda=guarda)
-            elif i == 'E1':
-                grafE1(10, ruta, guarda=guarda)
-            elif i == 'SPv':
-                grafSP(11, ruta, guarda=guarda)
-            # Renderiza cada gráfico y continúa al siguiente
-            plt.pause(0.1)  # Pausa breve para que el gráfico se renderice
-        plt.show()
+        """
+        Controla el guardado y la muestra de gráficos según las opciones.
+        
+        Args:
+            graf (list): Lista de claves que se desean mostrar.
+            ruta (str): Ruta donde se guardan las imágenes.
+            guarda (bool): Si True, se guardan todas las figuras.
+        """
+        # Diccionario con las funciones de generación de gráficos
+        graficos = {
+            'Eele': lambda: grafE(1, ruta, mostrar='Eele' in graf, guarda=guarda),
+            'Vele': lambda: grafV(2, ruta, mostrar='Vele' in graf, guarda=guarda),
+            'Rhof': lambda: grafRho(3, ruta, mostrar='Rhof' in graf, guarda=guarda),
+            'Vf': lambda: grafVf(4, ruta, mostrar='Vf' in graf, guarda=guarda),
+            'Vdef': lambda: grafVdef(5, ruta, mostrar='Vdef' in graf, guarda=guarda),
+            'Ef': lambda: grafEf(6, ruta, mostrar='Ef' in graf, guarda=guarda),
+            'J1': lambda: grafJ1(7, ruta, mostrar='J1' in graf, guarda=guarda),
+            'E1': lambda: grafE1(8, ruta, mostrar='E1' in graf, guarda=guarda),
+            'SPv': lambda: grafSP(9, ruta, mostrar='SPv' in graf, guarda=guarda),
+        }
+
+        # Iterar sobre todas las claves y ejecutar las funciones
+        for key, func in graficos.items():
+            func()  # Genera y guarda/muestra según corresponda
+        plt.show(block=False)  # No bloquea la ejecución
+        answer = input("¿Desea ejecutar otro modelo?: (y: si/otra tecla: no)    ")
+        if answer == "y":
+            plt.close("all")
+
+
     carpeta = f"modelo_{Vol/1000}_{cantidad}_{y_coor}_{nodosx}_{nodosy}"
     ruta_destino = f"C:\\Users\\HITES\\Desktop\\la uwu\\14vo semestre\\Trabajo de título\\programa resultados\\{carpeta}"
-    print(ruta_destino)
+    #print(ruta_destino)
     guarda_en_carpeta(Vol, y_coor, nodosx, nodosy, x, Ei, Ji, ruta_destino, guarda=guarda)
     show_plot(gra, ruta_destino, guarda=guarda)
     

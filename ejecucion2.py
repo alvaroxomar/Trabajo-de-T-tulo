@@ -12,8 +12,8 @@ plt.close('all')
 # Estado de gráficos
 #'Eele', 'Vele', 'Rhof', 'Vf', 'Vdef', 'Ef', 'J1', 'E1', 'SubPl'
 estados_graficos = {
-    "Eele": False, "Vele": False, "Rhof": False, "Vf": False, "SPd": False,
-    "Vdef": False, "Ef": False, "J1": False, "E1": False, "SPv": False
+    "Eele": False, "Vele": False, "Rhof": False, "Vf": False, "SPd": False, "Rhop": False,
+    "Vdef": False, "Ef": False, "J1": False, "E1": False, "SPv": False, "Rhon": False
 }
 graficos = []
 
@@ -57,6 +57,8 @@ def activar_bipolar():
         entradas["Jp (nA/m^2)"].config(state="disabled")
         # Verifica si alguna casilla está activada
         boton_Spd.config(state=tk.NORMAL)
+        boton_Rhop.config(state=tk.NORMAL)
+        boton_Rhon.config(state=tk.NORMAL)
     else:  # Si el botón Bipolar está desmarcado
         # Eliminar el contenido actual de las casillas
         entradas["Voltaje 2 (kV)"].config(state="disabled")
@@ -68,6 +70,8 @@ def activar_bipolar():
         entradas["Recombinación (μm^3/s)"].config(state="disabled")
         entradas["Jp (nA/m^2)"].config(state="normal")
         boton_Spd.config(state=tk.DISABLED)
+        boton_Rhop.config(state=tk.DISABLED)
+        boton_Rhon.config(state=tk.DISABLED)
 
         
         # Establecer x2 y y2 como None para que no se grafiquen
@@ -489,6 +493,7 @@ def cerrar_programa():
         # Terminar el programa
         if ventana.winfo_exists():  # Verifica si la ventana aún existe
             ventana.destroy()
+        plt.close('all')
 
 
 # Crear la ventana principal
@@ -504,32 +509,59 @@ explicaciones = {
     "Posición en y (m)": "Posición vertical del conductor 1 en metros.",
     "Posición en x 2 (m)": "Posición horizontal del conductor 2 en metros.",
     "Posición en y 2 (m)": "Posición vertical del conductor 2 en metros.",
-    "factor conductor": "Factor de corrección para las características del conductor 2.",
-    "factor conductor 2": "Factor de corrección para las características del conductor 2.",
-    "Subconductores": "Número de subconductores usados en el sistema.",
+    "factor conductor": "Factor de rugosidad para las características del conductor.",
+    "factor conductor 2": "Factor de rugosidad para las características del conductor 2.",
+    "Subconductores": "Número de subconductores usados en cada polo.",
     "Separación (cm)": "Distancia entre subconductores, medida en centímetros.",
     "Voltaje 2 (kV)": "Voltaje aplicado al conductor secundario en kilovoltios (kV).",
-    "Área 2 (mm²)": "Sección transversal del segundo conductor.",
+    "Área 2 (mm²)": "Sección transversal del segundo conductor, medida en milímetros cuadrados.",
     "Recombinación (μm^3/s)": "Tasa de recombinación del material, medida en micrómetros cúbicos por segundo.",
     "Jp (nA/m^2)": "Densidad de corriente de polarización, medida en nanoamperios por metro cuadrado.",
     "Movilidad iónica (m2/kVs)": "Movilidad de iones en el sistema.",
     "Temperatura (°C)": "Temperatura ambiente en grados Celsius.",
-    "Presión (kPa)": "Presión del sistema en kilopascales.",
+    "Altitud (m)": "Altitud por sobre el nivel del mar (m)",
     "Viento x (m/s)": "Componente horizontal de la velocidad del viento.",
     "Viento y (m/s)": "Componente vertical de la velocidad del viento.",
-    "Modo (str)": "Modo de operación del sistema.",
-    "Rugosidad terreno": "Coeficiente que describe la rugosidad del terreno.",
-    "Interior conductor": "Indica si el interior del conductor está activado.",
-    "Gráficos": "Seleccione algun grafico para poder mostrar  en pantalla",
-    "Ancho (m)": "Semi ancho del entorno en el  que se encuentran los condcutores",
-    "Altura (m)": "Altura total del entorno en el que se encuentran los conductores",
-    "nodos x": "Cantidad total de nodos en dirección horizontal",
-    "nodos y": "Cantidad total de nodos en dirección vertical",
-    "Medición (m)": "Altura en metros en donde se realizará el cálculo del campo eléctrico y la densidad de corriente iónica",
-    "Max iter rho": "Máxima cantidad de iteraciones para calcular la densidad de carga en el espacio",
-    "Max iter V": "Máxima cantidad de iteraciones para calcular el  potencial en el espacio",
-    "Max iter Gob": "Máxima cantidad de iteraciones para el algoritmo principal",
+    "Modo (str)": (
+        "Modo de distribución del viento:\n"
+        "- uniforme: significa que a toda altura existe la misma velocidad horizontal de viento\n"
+        "- gradiente: significa que la velocidad del viento se distribuye de manera gradual aumentando proporcionalmente "
+        "con la altura de acuerdo con la fórmula wx(y)=wx0(y/y0)^alpha, con wx0 una velocidad de referencia a una altura y0 "
+        "y alpha es un coeficiente de rugosidad del suelo (0,1)."
+    ),
+    "Rugosidad terreno": "Coeficiente que describe la rugosidad del terreno, su valor comprende entre 0 y 1.",
+    "Interior conductor": (
+        "Indicación sobre la forma en que se impone la condición de borde en el conductor:\n"
+        "- si: significa que la densidad de carga y el voltaje se distribuyen en un único nodo ubicado en el centro del conductor equivalente\n"
+        "- no: significa que la densidad de carga se distribuye en la periferia del conductor de manera no uniforme, "
+        "con el máximo en el nodo sur, el mínimo en el nodo norte e intermedio en los nodos este y oeste\n"
+        "- noV: es exclusivo para la distribución del voltaje en el cual este se distribuye también en la periferia del conductor equivalente."
+    ),
+    "Gráficos disponibles": (
+        "Gráficos disponibles:\n"
+        "- Eele: Campo electrostático\n"
+        "- Vele: Potencial electrostático\n"
+        "- Rhof: Densidad de carga espacial total\n"
+        "- Vf: Potencial iónico\n"
+        "- SPd: Densidades de carga vista 3D, disponible solamente para la configuración bipolar\n"
+        "- Rhop: Densidad de carga positiva, disponible solamente para configuración bipolar\n"
+        "- Rhon: Densidad de carga negativa, disponible solamente para configuración bipolar\n"
+        "- Vdef: Potencial definitivo\n"
+        "- Ef: Campo definitivo\n"
+        "- J1: Perfil densidad de corriente a nivel de piso\n"
+        "- E1: Perfil magnitud campo eléctrico total a nivel de piso\n"
+        "- SPv: Potenciales vista 3D\n"
+    ),
+    "Ancho (m)": "Semi ancho del entorno en el que se encuentran los conductores.",
+    "Altura (m)": "Altura total del entorno en el que se encuentran los conductores.",
+    "nodos x": "Cantidad total de nodos en dirección horizontal.",
+    "nodos y": "Cantidad total de nodos en dirección vertical.",
+    "Medición (m)": "Altura en metros en donde se realizará el cálculo del campo eléctrico y la densidad de corriente iónica.",
+    "Max iter rho": "Máxima cantidad de iteraciones para calcular la densidad de carga en el espacio.",
+    "Max iter V": "Máxima cantidad de iteraciones para calcular el potencial en el espacio.",
+    "Max iter Gob": "Máxima cantidad de iteraciones para el algoritmo principal.",
 }
+
 # Configurar una fuente más pequeña para el botón
 fuente_boton = ("Arial", 6, "bold")  # Tamaño 6 para reducir altura
 # Función para mostrar una ventana emergente con la explicación
@@ -538,26 +570,58 @@ def mostrar_explicacion(parametro):
         # Crear una ventana emergente
         ventana_emergente = tk.Toplevel(ventana)
         ventana_emergente.title(f"Explicación: {parametro}")
-        ventana_emergente.geometry("400x200")
-        
-        # Agregar el texto de explicación
+        ventana_emergente.geometry("500x400")  # Tamaño fijo de la ventana
+
+        # Crear un marco para contener el desplazamiento
+        marco = ttk.Frame(ventana_emergente)
+        marco.pack(fill="both", expand=True)
+
+        # Crear un Canvas para el contenido desplazable
+        canvas = tk.Canvas(marco)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        # Barra de desplazamiento vertical
+        barra_desplazamiento = ttk.Scrollbar(
+            marco, orient="vertical", command=canvas.yview
+        )
+        barra_desplazamiento.pack(side="right", fill="y")
+
+        # Conectar el Canvas con la barra de desplazamiento
+        canvas.configure(yscrollcommand=barra_desplazamiento.set)
+
+        # Crear un marco dentro del Canvas para el contenido
+        marco_contenido = ttk.Frame(canvas)
+        canvas.create_window((0, 0), window=marco_contenido, anchor="nw")
+
+        # Agregar el texto de explicación al marco interno
         texto = tk.Label(
-            ventana_emergente,
+            marco_contenido,
             text=explicaciones[parametro],
-            wraplength=350,
+            wraplength=450,  # Ajusta el ancho del texto
             justify="left",
             padx=10,
             pady=10
         )
-        texto.pack(expand=True, fill="both")
-        
+        texto.pack(fill="both", expand=True)
+
+        # Ajustar el área visible del Canvas al tamaño del contenido
+        marco_contenido.update_idletasks()
+        canvas.config(scrollregion=canvas.bbox("all"))
+
+        # Crear un marco para el botón de cierre
+        marco_boton = ttk.Frame(ventana_emergente)
+        marco_boton.pack(fill="x", pady=10)
+
         # Botón para cerrar la ventana emergente
         boton_cerrar = ttk.Button(
-            ventana_emergente,
+            marco_boton,
             text="Cerrar",
             command=ventana_emergente.destroy
         )
-        boton_cerrar.pack(pady=10)
+        boton_cerrar.pack(pady=20)  # Centrado automáticamente al usar .pack()
+
+
+       
 
 # Contenedores principales
 secciones = {
@@ -581,7 +645,7 @@ secciones = {
         ("Movilidad iónica (m2/kVs)", "0.15"),
         ("Movilidad iónica 2 (m2/kVs)", "0.15"),
         ("Temperatura (°C)", "25"),
-        ("Presión (kPa)", "110"),
+        ("Altitud (m)", "100"),
         ("Viento x (m/s)", "0"),
         ("Viento y (m/s)", "0"),
         ("Modo (str)", "uniforme"),
@@ -881,7 +945,7 @@ boton_ayuda = ttk.Button(
     marco_graficos,
     text="?",
     width=2,
-    command=lambda: mostrar_explicacion("Gráficos"))  # Usar lambda para diferir la ejecución)
+    command=lambda: mostrar_explicacion("Gráficos disponibles"))  # Usar lambda para diferir la ejecución)
 boton_ayuda.grid(row=0, column=1, padx=2, pady=1)
 # Aplicar fuente personalizada al botón
 boton_ayuda.configure(style="Ayuda.TButton")
@@ -889,8 +953,10 @@ boton_ayuda.configure(style="Ayuda.TButton")
 style = ttk.Style()
 style.configure("Ayuda.TButton", font=fuente_boton, padding=(2, 2))  # Padding interno reducido
 boton_Spd = None  # Variable para almacenar el botón de SPd
+boton_Rhop = None  # Variable para almacenar el botón de SPd
+boton_Rhon = None  # Variable para almacenar el botón de SPd
 # Distribuir botones en 2 filas y 4 columnas
-num_columnas = 5  # Número de columnas deseadas
+num_columnas = 6  # Número de columnas deseadas
 for i, grafico in enumerate(estados_graficos):
     fila = i // num_columnas  # División entera para obtener la fila
     columna = i % num_columnas  # Resto de la división para obtener la columna
@@ -900,6 +966,12 @@ for i, grafico in enumerate(estados_graficos):
     if grafico == "SPd":
         boton_Spd = boton
         boton_Spd.config(state=tk.DISABLED)  # Iniciar deshabilitado
+    if grafico == "Rhop":
+        boton_Rhop = boton
+        boton_Rhop.config(state=tk.DISABLED)  # Iniciar deshabilitado
+    if grafico == "Rhon":
+        boton_Rhon = boton
+        boton_Rhon.config(state=tk.DISABLED)  # Iniciar deshabilitado
 
 # Iniciar la aplicación
 inicializar_grafico()
