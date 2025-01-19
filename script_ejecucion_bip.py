@@ -5,6 +5,8 @@ if __name__ == "__main__":
     import numpy as np
     import matplotlib.pyplot as plt
     import math as ma
+    from tkinter import messagebox
+    import tkinter as tk
     from matplotlib.colors import LogNorm
     from matplotlib.colors import SymLogNorm
     import matplotlib.colorbar as cbar
@@ -427,6 +429,7 @@ if __name__ == "__main__":
 
 
     ## Ocupa el negativo del gradiente del potencial calculado
+    '''
     def calcular_campo_electrico(V, dx, dy):
         # Inicializar las matrices para los componentes del campo eléctrico
         Ex = np.zeros_like(V)
@@ -446,6 +449,66 @@ if __name__ == "__main__":
         E_magnitud = np.sqrt(Ex**2 + Ey**2)
         
         return Ex, Ey, E_magnitud
+    '''
+    def ajustar_gradiente(vol, vol_co):
+        # Se ocupa solo cuando son conductores fasciculados
+        return 1.1339 - 0.1678 * (vol / vol_co) + 0.03 * (vol / vol_co)**2
+
+    ## Ocupa el negativo del gradiente del potencial calculado
+    def calcular_campo_electrico(V, dx, dy, posicion_cond, Evvs, Vcos, Vos, kapzov_borde=False, bundle=False):
+        """
+        Calcula los componentes del campo eléctrico (Ex, Ey) y su magnitud (E_magnitud),
+        considerando múltiples conductores con sus parámetros específicos.
+        
+        Args:
+            V (numpy.ndarray): Matriz de potencial eléctrico.
+            dx (float): Separación entre nodos en el eje x.
+            dy (float): Separación entre nodos en el eje y.
+            posicion_cond (list): Lista de coordenadas de los conductores [(y1, x1), (y2, x2)].
+            Evvs (list): Lista de gradientes superficiales iniciales para los conductores [Evv1, Evv2].
+            Vcos (list): Lista de voltajes de referencia para los conductores [Vco1, Vco2].
+            Vos (list): Lista de voltajes aplicados a los conductores [Vo1, Vo2].
+            kapzov_borde (bool): Si se aplica la condición de Kapzov en los bordes.
+            bundle (bool): Si se consideran conductores fasciculados.
+
+        Returns:
+            tuple: Componentes Ex, Ey y magnitud del campo eléctrico E_magnitud.
+        """
+        Ex = np.zeros_like(V)
+        Ey = np.zeros_like(V)
+
+        # Calcular derivadas centrales
+        Ey[1:-1, :] = (V[2:, :] - V[:-2, :]) / (2 * dy)
+        Ex[:, 1:-1] = -(V[:, 2:] - V[:, :-2]) / (2 * dx)
+
+        # Calcular bordes
+        Ey[0, :] = (V[1, :] - V[0, :]) / dy
+        Ey[-1, :] = (V[-1, :] - V[-2, :]) / dy
+        Ex[:, 0] = -(V[:, 1] - V[:, 0]) / dx
+        Ex[:, -1] = -(V[:, -1] - V[:, -2]) / dx
+
+        if kapzov_borde:
+            for i, (pos, Evv, Vco, Vo) in enumerate(zip(posicion_cond, Evvs, Vcos, Vos)):
+                posy, posx = pos
+                if bundle:
+                    Evv *= ajustar_gradiente(Vo, Vco)
+
+                # Campo eléctrico en el conductor
+                E_magnitud = np.sqrt(Ex**2 + Ey**2)
+                factores = {
+                    (1, 0): np.abs(E_magnitud[posy + 1, posx] / Evv),
+                    (-1, 0): np.abs(E_magnitud[posy - 1, posx] / Evv),
+                    (0, 1): np.abs(E_magnitud[posy, posx + 1] / Evv),
+                    (0, -1): np.abs(E_magnitud[posy, posx - 1] / Evv),
+                }
+                for (dy, dx), factor in factores.items():
+                    Ex[posy + dy, posx + dx] /= factor
+                    Ey[posy + dy, posx + dx] /= factor
+
+        # Magnitud del campo eléctrico
+        E_magnitud = np.sqrt(Ex**2 + Ey**2)
+        return Ex, Ey, E_magnitud
+
 
     def convergencia(rho_actual, rho_anterior, tol):
         # Calcula la diferencia absoluta
@@ -573,8 +636,8 @@ if __name__ == "__main__":
     '''
     ################################################################
     ################################################################
-    def algoritmo_rho(V, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='no',
-                    rho_h=False, visu=15, muestra=False, fi=30):
+    def algoritmo_rho(V, Evvs, Vcos, Vos, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='no',
+                    rho_h=False, visu=15, muestra=False, fi=30, is_bundled = False):
         '''
         Algoritmo principal de resolución del sistema de ecuaciones de la densidad de cara positiva y negativa
         Comienza con la fijacion de la distribucion de rho- como valores nulos excepto en el conductor negativo
@@ -617,7 +680,7 @@ if __name__ == "__main__":
         else:
             rhop_hist = False
             rhon_hist = False
-        Ex, Ey, Em = calcular_campo_electrico(V, dx, dy)
+        Ex, Ey, Em = calcular_campo_electrico(V, dx, dy, pos, Evvs, Vcos, Vos, kapzov_borde=True, bundle=is_bundled)
         Ewxp = Ex*movp + wx
         Ewyp = Ey*movp + wy
         Ewxn = Ex*movn - wx
@@ -1103,8 +1166,8 @@ if __name__ == "__main__":
         '''
         return rho_inicial, rho_boundary, rho_ip, rho_in
 
-    def iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, windx, windy, max_iter_rho, max_iter,
-                        it_global, rho_h = False, visu=15, con_condct='si', copiado='no', must = False, fi=30):
+    def iterar_potencial(Vmi, Evvs, Vcos, Vos, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, windx, windy, max_iter_rho, max_iter,
+                        it_global, rho_h = False, visu=15, con_condct='si', copiado='no', must = False, fi=30, is_bundled=False):
         """Itera para calcular el potencial eléctrico y la densidad de carga."""
         Vm = np.zeros_like(Vmi)
         difer_global = []
@@ -1118,8 +1181,8 @@ if __name__ == "__main__":
             Volder = Vm.copy()
             if n == 0:
                 print('Primer rho')
-                rho_p, rho_n, rho_d = algoritmo_rho(Vmi, rho_inicial, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov1, mov2, windx, windy,
-                                                [rho_ip, rho_in], fixed_point, condi=con_condct, copia=copiado, rho_h=rho_h, visu=visu, muestra=must, fi=fi)
+                rho_p, rho_n, rho_d = algoritmo_rho(Vmi, Evvs, Vcos, Vos, rho_inicial, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov1, mov2, windx, windy,
+                                                [rho_ip, rho_in], fixed_point, condi=con_condct, copia=copiado, rho_h=rho_h, visu=visu, muestra=must, fi=fi, is_bundled=is_bundled)
                 #Vp =algoritmo_V_rho(Vm, rho_p, dx, dy,fixed_point[0], 0, max_iter)
                 #Vn =algoritmo_V_rho(Vm, rho_n, dx, dy,fixed_point[1], 0, max_iter)
             else:
@@ -1143,12 +1206,12 @@ if __name__ == "__main__":
         return Vm, rho_p, rho_n, rho_d
 
 
-    def calcular_resultados_finales(Vm, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l):
+    def calcular_resultados_finales(Vm, Vos, Vcos, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l, posicion_cond, Evvs, is_bundled= False):
         """Calcula el campo eléctrico, densidad de corriente y verifica la convergencia."""
         Vol_def = Vm + Vmi
         movp, movn = mov
-        Exxini, Eyyini, Eini =calcular_campo_electrico(Vmi, dx, dy)
-        Edefx, Edefy, Edef = calcular_campo_electrico(Vol_def, dx, dy)
+        Exxini, Eyyini, Eini =calcular_campo_electrico(Vmi, dx, dy, posicion_cond, Evvs, Vcos, Vos, kapzov_borde=False, bundle=False)
+        Edefx, Edefy, Edef = calcular_campo_electrico(Vol_def, dx, dy, posicion_cond, Evvs, Vcos, Vos, kapzov_borde=True, bundle=is_bundled)
         Ei = Edef[encuentra_nodos(x, y, 0, l)[1],  :] # Magnitud campo eléctrico nivel de piso
         Jplus = rho_p*movp*np.sqrt((Edefx+(windx/movp))**2 + (Edefy+(windy/movp))**2)
         Jdiff = rho_n*movn*np.sqrt((Edefx-(windx/movn))**2 + (Edefy-(windy/movn))**2)
@@ -1164,8 +1227,8 @@ if __name__ == "__main__":
     #print(r'Jp promedio propuesto: '+str(Jp*(10**9))+' nA/m^2')
 
     def ejecutar_algoritmo(fixed_point, diametro, fixed_value, X, Y, R, Q, mov, m, delta, nodosy, nodosx, yco, g0,
-                            dx, dy, windx, windy, max_iter_rho, max_iter, it_global, l, visualizacion, rho_h=False,
-                            condct='si', copy='no', Muestra=False, fi=30):
+                            dx, dy, windx, windy, max_iter_rho, Evvs, Vcos, max_iter, it_global, l, visualizacion, rho_h=False,
+                            condct='si', copy='no', Muestra=False, fi=30, is_bundled=False):
         """Ejecuta el algoritmo completo ajustando Jp hasta cumplir la condición de convergencia."""
         convergencia_lograda = False
         cont = 0
@@ -1175,19 +1238,19 @@ if __name__ == "__main__":
         print('----------------------------------')
         # Paso 1: Calcular potencial inicial
         Vmi = calcular_potencial_inicial(fixed_point, fixed_value, X, Y, R, Q, st='noV') # Ubicar en 5 nodos con el voltaje de +- en cada conductor
-        Exx,  Eyy,  E = calcular_campo_electrico(Vmi, dx, dy)
+        Exx,  Eyy,  E = calcular_campo_electrico(Vmi, dx, dy, fixed_point, Evvs, Vcos, fixed_value, kapzov_borde=True, bundle=is_bundled)
         Ey = E[nod_central[1],nod_central[0]] # Componente vertical del campo eléctrico en punto medio entre los conductores, necesario  para cb carga en conductor
         # Paso 2: Inicializar densidades
         rho_inicial, rho_boundary, rho_ip, rho_in = inicializar_densidad(Ey, g0, fixed_value,  diametro, R, m, delta, nodosy, nodosx, pos_conductor1,
                                                                 pos_conductor2, yco, con_condct=condct, copiado=copy)
         # Paso 3: Iterar para calcular Vm y rho
-        Vm, rho_p, rho_n, rho_d = iterar_potencial(Vmi, rho_inicial, rho_boundary, [rho_ip, rho_in], fixed_point, dx, dy, windx, windy,
-                                                    max_iter_rho, max_iter, it_global, rho_h=rho_h, visu=visualizacion, con_condct=condct, copiado=copy, must = Muestra, fi=fi)
+        Vm, rho_p, rho_n, rho_d = iterar_potencial(Vmi, Evvs, Vcos, fixed_value, rho_inicial, rho_boundary, [rho_ip, rho_in], fixed_point, dx, dy, windx, windy,
+                                                    max_iter_rho, max_iter, it_global, rho_h=rho_h, visu=visualizacion, con_condct=condct, copiado=copy, must = Muestra, fi=fi, is_bundled=is_bundled)
         #fi += 1
         visualizacion += 2
         # Paso 4: Calcular resultados finales
         Vol_def = Vm+Vmi
-        Jave, Ji, Campo_ini, Campo_fin, Ei , Jtot= calcular_resultados_finales(Vm, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l)
+        Jave, Ji, Campo_ini, Campo_fin, Ei , Jtot= calcular_resultados_finales(Vm, fixed_value, Vcos, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l, fixed_point, Evvs, is_bundled = is_bundled)
         '''
         print(f'Jp promedio calculado: {Jave * 1e9} nA/m^2')
         #print(f'Jp promedio propuesto: {Jp * 1e9} nA/m^2')
@@ -1364,6 +1427,9 @@ if __name__ == "__main__":
     area2 = float(params["Área 2 (mm²)"])
     cantidad = int(params["Subconductores"])
     sep = float(params["Separación (cm)"])
+    is_bundled = False
+    if sep > 0:
+        is_bundled = True
     es_cm = True # si separacion está en cm entonces es True
     es_mcm = False # si  aárea está en mm2 entonces es False
     conversion = 0.5067  # Conversión de MCM a mm²
@@ -1425,8 +1491,10 @@ if __name__ == "__main__":
     g0 = 29.8 # kV/cm
     Evv1 = grad_sup(g0, m1, delta, Req1*100) # kV/cm
     Evv2 = grad_sup(g0, m2, delta, Req2*100) # kV/cm
+    Evvs = [Evv1, Evv2]
     evv1 = Vol_crit(Evv1, y_coor1*100, Req*100) # kV
     evv2 = Vol_crit(Evv2, y_coor2*100, Req*100) # kV
+    Vcos = [evv1, evv2]
     print(f"potencial critico corona polo  positivo es {evv1} kV y gradiente superficial critico es {Evv1} kV/cm")
     print(f"potencial critico corona polo  negativo es {evv2} kV y gradiente superficial critico es {Evv2} kV/cm")
     fi = 30 # número de la ventana donde se muestra la evolución de la diferencia promedio y la desviación
@@ -1504,11 +1572,11 @@ if __name__ == "__main__":
                                                                                                     fixed_value, X, Y, R,
                                                                                                     Q, mov, m, delta, nodosy,
                                                                                                         nodosx, yco, g0, dx, dy, windx,
-                                                                                                        windy, max_iter_rho,
+                                                                                                        windy, max_iter_rho, Evvs, Vcos,
                                                                                                             max_iter, it_global,
                                                                                                             l, visualizacion, rho_h=histl,
                                                                                                                 condct=in_condct, copy=copiado,
-                                                                                                                Muestra=mostrar, fi=fi)
+                                                                                                                Muestra=mostrar, fi=fi, is_bundled=is_bundled)
     Exxini, Eyyini, Em = Campo_ini
     Edefx, Edefy, Edef = Campo_fin
     Jave = np.mean(Jtot[encuentra_nodos(x, y, 0,l)[1],:])
@@ -1866,6 +1934,27 @@ if __name__ == "__main__":
             plt.show(block=False)  # Muestra la figura sin detener la ejecución
         else:
             plt.close()
+    # Crear una ventana emergente para preguntar al usuario
+    def preguntar_nuevo_modelo():
+        ventana = tk.Tk()
+        ventana.title("Nuevo modelo")
+        ventana.geometry("300x150")
+        
+        label = tk.Label(ventana, text="¿Desea iniciar un nuevo modelo?", font=("Arial", 12))
+        label.pack(pady=10)
+        
+        # Acción al presionar el botón
+        def iniciar_nuevo_modelo():
+            plt.close("all")  # Cierra todas las figuras de Matplotlib
+            ventana.destroy()  # Cierra la ventana emergente
+            print("Nuevo modelo iniciado.")  # Aquí puedes iniciar el nuevo modelo
+        
+        boton = tk.Button(ventana, text="Iniciar nuevo modelo", command=iniciar_nuevo_modelo, bg="lightblue")
+        boton.pack(pady=10)
+        
+        # Permitir que la ventana se cierre sin bloquear las figuras
+        ventana.protocol("WM_DELETE_WINDOW", ventana.destroy)
+        ventana.mainloop()
 
     def show_plot(graf, ruta, guarda=False):
         """
@@ -1896,11 +1985,8 @@ if __name__ == "__main__":
         for key, func in graficos.items():
             func()  # Genera y guarda/muestra según corresponda
         plt.show(block=False)  # No bloquea la ejecución
-        answer = input("¿Desea ejecutar otro modelo?: ('y': si/ 'n': no)    ")
-        if answer == "y":
-            plt.close("all")
-        if answer == "n":
-            pass
+        # Llamar a la ventana emergente
+        preguntar_nuevo_modelo()
         
     carpeta = f"modeloBIP_{Vol1/1000}_{cantidad}_{y_coor1}_{y_coor2}_{nodosx}_{nodosy}"
     ruta_destino = f"C:\\Users\\HITES\\Desktop\\la uwu\\14vo semestre\\Trabajo de título\\programa resultados\\{carpeta}"

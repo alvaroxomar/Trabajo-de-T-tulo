@@ -6,6 +6,7 @@ import math
 import numpy as np
 import json
 import subprocess
+import math as ma
 
 plt.close('all')
 
@@ -17,30 +18,207 @@ estados_graficos = {
 }
 graficos = []
 
-def alternar_grafico(nombre):
+def alternar_grafico(nombre, mostrar_mensaje=True):
     """
-    Alterna el estado de un gráfico, actualiza la lista de gráficos seleccionados y muestra un mensaje.
+    Alterna el estado de un gráfico, actualiza la lista de gráficos seleccionados y muestra un mensaje opcional.
     
     Args:
         nombre (str): Nombre del gráfico.
+        mostrar_mensaje (bool): Indica si se debe mostrar un mensaje de confirmación.
     """
     # Cambiar el estado del gráfico
     estados_graficos[nombre] = not estados_graficos[nombre]
     mensaje = "seleccionado" if estados_graficos[nombre] else "deseleccionado"
+    
     # Actualizar la lista de gráficos activados
     if estados_graficos[nombre]:
         if nombre not in graficos:
-            graficos.append(nombre)  # Agregar a la lista si está seleccionado
+            graficos.append(nombre)
     else:
         if nombre in graficos:
-            graficos.remove(nombre)  # Eliminar de la lista si está deseleccionado
+            graficos.remove(nombre)
     
-    # Mostrar el mensaje
-    messagebox.showinfo(nombre, f"Se ha {mensaje} {nombre}.")
+    # Mostrar el mensaje si está habilitado
+    if mostrar_mensaje:
+        messagebox.showinfo(nombre, f"Se ha {mensaje} {nombre}.")
     
     # Imprimir el estado actual de la lista (opcional)
     print(f"Gráficos seleccionados: {graficos}")
+todos_seleccionados = False
+def seleccionar_todos():
+    """
+    Alterna la selección de todos los gráficos.
+    """
+    global todos_seleccionados
+    
+    for grafico in estados_graficos:
+        if grafico in ["SPd", "Rhop", "Rhon"] and not boton_bipolar_var.get():
+            # No modificar gráficos deshabilitados
+            continue
+        alternar_grafico(grafico, mostrar_mensaje=False)
+    
+    # Mostrar mensaje de confirmación
+    mensaje_completo = "seleccionados" if not todos_seleccionados else "deseleccionados"
+    messagebox.showinfo("Selección Completa", f"Todos los gráficos han sido {mensaje_completo}.")
+    
+    # Alternar el estado global
+    todos_seleccionados = not todos_seleccionados
+####################################
+# FUNCIONES DE VERIFICACION DE ESPACIO
+######################################
+def obtener_parametro(param, tipo):
+    """
+    Verifica si un parámetro está vacío y lo asigna como None o lo convierte al tipo especificado.
 
+    :param param: Valor del parámetro a verificar.
+    :param tipo: Tipo al que se debe convertir (float o int).
+    :return: Valor convertido o None si está vacío.
+    """
+    if param == "" or param is None:
+        return None
+    return tipo(param)
+
+def convierte_a_radio(area, conversion=1, es_mcm=False):
+    """
+    Calcula el radio de un conductor a partir del área.
+    Parámetros:
+        area: Área del conductor.
+        conversion: Factor de conversión (por ejemplo, de MCM a mm²).
+        es_mcm: Indica si el área está en MCM (True) o no (False).
+    Retorna:
+        Radio en las mismas unidades que el área (por defecto en mm).
+    """
+    factor = conversion if es_mcm else 1
+    return np.sqrt(area * factor / np.pi)
+
+def calcula_lados(numero, separacion):
+    """
+    Calcula las distancias entre los subconductores según su disposición.
+    Parámetros:
+        numero: Número de subconductores.
+        separacion: Distancia entre subconductores vecinos.
+    Retorna:
+        Lista con las longitudes de los lados del polígono.
+    """
+    lados = [separacion] * numero
+    if numero == 4:
+        lados.extend([separacion * np.sqrt(2)] * 2)
+    return lados
+
+def distancia_equivalente(lados):
+    """
+    Calcula la distancia geométrica media (D_eq) a partir de una lista de lados.
+    Parámetros:
+        lados: Lista de distancias entre subconductores.
+    Retorna:
+        Distancia geométrica media (D_eq).
+    """
+    return (ma.prod(lados))**(1 / len(lados))
+
+def distancia_equivalente_2(sepa, numero):
+    """
+    Calcula la distancia geométrica media (D_eq) a partir de una lista de lados.
+    Parámetros:
+        sepa: Separación subconductores vecinos
+    Retorna:
+        Distancia geométrica media (D_eq).
+    """
+    return sepa/(2*np.sin(np.pi/numero))
+
+def radio_eq(radio, numero, distancia):
+    """
+    Calcula el radio equivalente de un subconductor fasciculado.
+    Parámetros:
+        radio: Radio del subconductor individual.
+        numero: Número de subconductores.
+        distancia: Distancia equivalente entre subconductores.
+    Retorna:
+        Radio equivalente del conductor.
+    """
+    #if numero==1:
+    #    r_eq = radio
+    #else:
+    #    r_eq = distancia * (radio / distancia)**(1 / numero)
+    #return 1.09 * r_eq if numero == 4 else r_eq
+    return (radio*numero*distancia**(numero-1))**(1/numero)
+
+def calculo_radio_eq(numero, area_sub, sepa, conversion=1, es_mcm=False, es_cm=False):
+    """
+    Calcula el radio equivalente de un conductor fasciculado.
+    Parámetros:
+        numero: Número de subconductores.
+        area_sub: Área de cada subconductor.
+        sep: Separación entre subconductores vecinos.
+        conversion: Factor de conversión del área si está en MCM.
+        es_mcm: Indica si el área está en MCM.
+        es_cm: Indica si la separación está en cm.
+    Retorna:
+        Tuple con el radio equivalente y el radio individual.
+    """
+    #lados = calcula_lados(numero, sepa)
+    #distancia = distancia_equivalente(lados)
+    distancia_e = distancia_equivalente_2(sepa, numero)
+    radio = convierte_a_radio(area_sub, conversion, es_mcm)
+    if es_cm:
+        radio /= 10  # Convertir de mm a cm si es necesario
+    radio_equi = radio_eq(radio, numero, distancia_e)
+    if radio_equi==0:
+        radio_equi = radio
+    return radio_equi, radio
+
+def espacio(anchox,anchoy, nodox, nodoy):
+    '''
+    Función que entrega las dimensiones espaciales de la malla en base al ancho de separacion de los nodos y en base a
+    la cantidad de nodos que se desean en ambas dimensiones
+    '''
+    sx = np.abs((anchox/2)*(nodox-1))
+    sy = np.abs((anchoy)*(nodoy-1))
+    return sx, sy
+
+def malla(ancho, Sx, Sy, nodox = None, nodoy = None):
+    '''
+    Discretiza la malla y define a los  arreglos de distancia que definen la malla
+    Si nodox y nodoy no son dados, asume que se calculan a partir de 'ancho'
+    Si son dados, solo discretiza el largo x e y
+    '''
+    if nodox is None and nodoy is None:
+        x = np.arange(-Sx, Sx+ancho, ancho)
+        y = np.arange(Sy, 0-ancho, -ancho)
+        nodox = len(x)
+        nodoy = len(y)
+    else:
+        x = np.linspace(-Sx, Sx, nodox)
+        y = np.linspace(Sy, 0, nodoy)
+    return x, y, nodox, nodoy
+
+def verificar_discretizacion(min, sx, sy, nodox, nodoy, x_coor, y_coor):
+    print(f"tipo sx,sy son {type(sx)}, {type(sy)}")
+    if (sx is None and sy is None) and (nodox is not None and nodoy is not None):
+        Sx, Sy = espacio(min, min, nodox, nodoy)
+        x, y, nodosx, nodosy = malla(min, Sx, Sy, nodox=nodox, nodoy=nodoy)
+        # Calcular las diferencias y nodos adicionales necesarios
+        distx = np.abs(x_coor) - Sx
+        disty = np.abs(y_coor) - Sy
+        nodos_sx = max(int(distx / min) + 1, 0)
+        nodos_sy = max(int(disty / min) + 1, 0)
+        # Inicializar un mensaje vacío
+        mensajes_error = []
+        # Verificar condiciones de dimensionamiento
+        if distx > 0:
+            mensajes_error.append(
+                f"Error de dimensionamiento en X. Si quieres usar {nodox} nodos en el eje horizontal entonces aumenta el radio equivalente o selecciona más nodos: {nodos_sx + nodosx}, "
+                f"o bien reduce la distancia x_coor. Diferencia x-sx: {distx:.2f} metros.")
+        if disty > 0:
+            mensajes_error.append(
+                f"Error de dimensionamiento en Y. Si quieres usar {nodoy} nodos en el eje vertical entonces aumenta el radio equivalente o selecciona más nodos: {2 * (nodos_sy + nodosy)}, "
+                f"o bien reduce la distancia y_coor. Diferencia y-sy: {disty:.2f} metros.")
+        # Mostrar mensajes de error si hay problemas
+        if mensajes_error:
+            messagebox.showinfo(
+                "Verificación dimensionamiento", "\n".join(mensajes_error))
+            return False
+        # Si no hay problemas, retornar True
+        return True
 
 
 # Botón Bipolar para activar/desactivar las casillas extra
@@ -160,6 +338,15 @@ def ejecutar_script():
         messagebox.showinfo("Éxito", "El archivo unipolar.py se ejecutó correctamente.")
     
 
+def process_area(nombre, entradas, cantidad, sep):
+    area = float(entradas[nombre].get())
+    Req, R = calculo_radio_eq(cantidad, area, sep, conversion=0.5067, es_mcm=False, es_cm=True) # están en cm
+    print(f"radio eq {Req} cm y radio subconductor {R} cm")
+    Req /= 100 # en m
+    R /= 100
+    print(f'{Req},{R} en metros')
+    return Req, R
+
 def validar_campos_y_ejecutar():
     # Obtener valor de cantidad
     cantidad = entrada_cantidad.get()
@@ -167,20 +354,50 @@ def validar_campos_y_ejecutar():
         cantidad = int(cantidad)
     except ValueError:
         cantidad = 0
-
+    sx = obtener_parametro(entradas["Ancho (m)"].get(), float)  # (m) Media longitud del plano de tierra
+    sy = obtener_parametro(entradas["Altura (m)"].get(), float)  # (m) Altura del área de estudio respecto de tierra
+    nodox = obtener_parametro(entradas["nodos x"].get(), int)  # Número de nodos en x
+    nodoy = obtener_parametro(entradas["nodos y"].get(), int)  # Número de nodos en y
+    sep = float(entradas["Separación (cm)"].get())
+    radios =  []
     for nombre, entrada in entradas.items():
         if nombre == "Separación (m)" and cantidad <= 1:
             continue  # Ignorar esta casilla
         if nombre == "Rugosidad terreno":
             continue
         if nombre == "Ancho (m)":
+            #sx = entradas[nombre].get()
             continue  # Ignorar esta casilla
         if nombre == "Altura (m)":
+            #sy = entradas[nombre].get()
             continue
         if nombre == "nodos x":
+            #nodox = entradas[nombre].get()
             continue  # Ignorar esta casilla
         if nombre == "nodos y":
+            #nodoy = entradas[nombre].get()
             continue
+        if nombre == "Posición en x (m)":
+            x1 = float(entradas[nombre].get().strip())  # Obtener el valor de la casilla "Posición en x (m)"
+            x2 = float(entradas["Posición en x 2 (m)"].get().strip())  # Obtener el valor de la casilla "Posición en x 2 (m)"
+            if x1 - x2 == 0 and boton_bipolar_var.get():
+                messagebox.showwarning(
+                    "Advertencia", "En modo Bipolar, los conductores no pueden estar en la misma posición"
+                )
+                return
+        if nombre == "Posición en y (m)":
+            y1 = float(entradas[nombre].get())
+        
+        if nombre == "Área (mm²)":
+            Req, R = process_area(nombre, entradas, cantidad, sep)
+            radios.append(Req)
+            print(f"radios hasta ahora es {radios}")
+            if boton_bipolar_var.get():
+                name = "Área 2 (mm²)"
+                Req2, R2 = process_area(name, entradas, cantidad, sep)
+                radios.append(Req2)
+            else:
+                radios.append(10**10)
 
         valor = entrada.get().strip()  # Obtener valor sin espacios adicionales
 
@@ -235,7 +452,10 @@ def validar_campos_y_ejecutar():
             except ValueError:
                 messagebox.showwarning("Advertencia", f"El valor de {campo} debe ser un número válido o estar vacío.")
                 return
-
+    print(f"los radios son {radios}")
+    verificado = verificar_discretizacion(np.min(radios), sx, sy, nodox, nodoy, x1, y1)
+    if not verificado:
+        return
     messagebox.showinfo("Validación exitosa", "Todos los campos han sido completados correctamente.")
     ejecutar_script()
 
@@ -492,8 +712,8 @@ def cerrar_programa():
         plt.close('all')
         # Terminar el programa
         if ventana.winfo_exists():  # Verifica si la ventana aún existe
+            plt.close('all')
             ventana.destroy()
-        plt.close('all')
 
 
 # Crear la ventana principal
@@ -538,6 +758,7 @@ explicaciones = {
         "- noV: es exclusivo para la distribución del voltaje en el cual este se distribuye también en la periferia del conductor equivalente."
     ),
     "Gráficos disponibles": (
+        "Seleccionar todo: Selecciona a todos los gráficos  disponibles según sean el caso unipolar o bipolar\n"
         "Gráficos disponibles:\n"
         "- Eele: Campo electrostático\n"
         "- Vele: Potencial electrostático\n"
@@ -893,17 +1114,61 @@ entrada_rugosidad_terreno = entradas["Rugosidad terreno"]
 entrada_modo.bind("<<ComboboxSelected>>", verificar_modo_viento) # Asociar evento de selección al Combobox
 entrada_rugosidad_terreno.config(state='disabled') # Desactivada inicialmente
 
-# Botones principales
-marco_botones = ttk.Frame(ventana, padding=10)
-marco_botones.grid(row=len(secciones) + 1, column=0, columnspan=3, sticky="w", padx=10, pady=5)  # Usar grid
 
-# Coloca los botones principales en las primeras columnas
-ttk.Button(marco_botones, text="Guardar", command=guardar_datos).grid(row=0, column=0, padx=5)
-ttk.Button(marco_botones, text="Limpiar", command=limpiar_campos).grid(row=0, column=1, padx=5)
-ttk.Button(marco_botones, text="Graficar", command=validar_campos_y_graficar).grid(row=0, column=2, padx=5)
-ttk.Button(marco_botones, text="Ejecutar", command=validar_campos_y_ejecutar).grid(row=0, column=3, padx=5)
-ttk.Button(marco_botones, text="Salir", command=cerrar_programa).grid(row=0, column=4, padx=5)
-ventana.protocol("WM_DELETE_WINDOW", cerrar_programa)  # Para el botón de cerrar ventana
+# Crear un estilo para los botones normales y seleccionados
+style = ttk.Style()
+# Estilo para el botón normal (sin sombra)
+style.configure("BotonNormal.TButton",
+                relief="flat",  # Sin relieve
+                padding=5,
+                borderwidth=1,  # Borde fino
+                highlightthickness=0,  # Sin contorno
+                width=15,  # Establecer un tamaño fijo de ancho
+                height=2,  # Establecer un tamaño fijo de altura
+                )
+
+# Estilo para el botón seleccionado (con sombra)
+style.configure("BotonSeleccionado.TButton",
+                relief="flat",  # Sin relieve
+                padding=5,
+                borderwidth=3,  # Borde más grueso para simular la sombra
+                highlightthickness=10,  # Contorno de color gris simulando sombra
+                highlightbackground="gray",  # Color de la "sombra"
+                highlightcolor="gray",  # Color de la "sombra" cuando está enfocado
+                width=15,  # Mantener el tamaño fijo
+                height=2,  # Mantener el tamaño fijo
+                )
+
+estado_botones = {}
+
+def alternar_estado_boton(boton):
+    """
+    Alterna el estado de un botón entre seleccionado y no seleccionado.
+    
+    Args:
+        boton (ttk.Button): El botón al que se aplicará el cambio.
+    """
+    if estado_botones.get(boton, False):
+        boton.configure(style="BotonNormal.TButton")  # Cambia al estilo normal
+        estado_botones[boton] = False
+    else:
+        boton.configure(style="BotonSeleccionado.TButton")  # Cambia al estilo seleccionado
+        estado_botones[boton] = True
+
+# Crear los botones con la función `marcar_boton` en sus comandos
+marco_botones = ttk.Frame(ventana, padding=10)
+marco_botones.grid(row=len(secciones) + 1, column=0, columnspan=3, sticky="w", padx=10, pady=5)
+boton_guardar = ttk.Button(marco_botones, text="Guardar", command=lambda: [guardar_datos(), alternar_estado_boton(boton_guardar)])
+boton_guardar.grid(row=0, column=0, padx=5)
+boton_limpiar = ttk.Button(marco_botones, text="Limpiar", command=limpiar_campos)
+boton_limpiar.grid(row=0, column=1, padx=5)
+boton_graficar = ttk.Button(marco_botones, text="Graficar", command=validar_campos_y_graficar)
+boton_graficar.grid(row=0, column=2, padx=5)
+boton_ejecutar = ttk.Button(marco_botones, text="Ejecutar", command=validar_campos_y_ejecutar)
+boton_ejecutar.grid(row=0, column=3, padx=5)
+boton_salir = ttk.Button(marco_botones, text="Salir", command=cerrar_programa)
+boton_salir.grid(row=0, column=4, padx=5)
+ventana.protocol("WM_DELETE_WINDOW", cerrar_programa)
 
 
 # Crear el botón Bipolar inmediatamente a la derecha
@@ -952,6 +1217,15 @@ boton_ayuda.configure(style="Ayuda.TButton")
 # Crear un estilo para el botón
 style = ttk.Style()
 style.configure("Ayuda.TButton", font=fuente_boton, padding=(2, 2))  # Padding interno reducido
+
+
+
+# Crear el botón "Seleccionar todos"
+boton_seleccionar_todos = ttk.Button(marco_graficos, text="Seleccionar Todos", command=lambda: [seleccionar_todos(), alternar_estado_boton(boton_seleccionar_todos)])
+
+# Ubicar el botón en la 3ra columna (índice 2)
+boton_seleccionar_todos.grid(row=0, column=2, padx=10, pady=5, sticky="ew")
+
 boton_Spd = None  # Variable para almacenar el botón de SPd
 boton_Rhop = None  # Variable para almacenar el botón de SPd
 boton_Rhon = None  # Variable para almacenar el botón de SPd

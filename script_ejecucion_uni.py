@@ -5,6 +5,8 @@ if __name__ == "__main__":
     import numpy as np
     import matplotlib.pyplot as plt
     import math as ma
+    from tkinter import messagebox
+    import tkinter as tk
     from matplotlib.colors import LogNorm
     from mpl_toolkits.mplot3d import Axes3D
     from scipy.interpolate import griddata
@@ -80,6 +82,7 @@ if __name__ == "__main__":
             Distancia geométrica media (D_eq).
         """
         return (ma.prod(lados))**(1 / len(lados))
+    
     def distancia_equivalente_2(sepa, numero):
         """
         Calcula la distancia geométrica media (D_eq) a partir de una lista de lados.
@@ -167,11 +170,11 @@ if __name__ == "__main__":
             Sx, Sy = espacio(min, min, nodox, nodoy)
             x, y, nodosx, nodosy = malla(min, Sx, Sy, nodox=nodox, nodoy=nodoy)
             distx=np.abs(x_coor)-Sx
-            nodos_sx = int(distx/min) + 1
+            nodos_sx = int(distx/min) + 1 # Cantidad de nodos que faltan para que que la posicion x del conductor esté dentro del ancho del espacio de estudio
             disty=np.abs(y_coor)-Sy
-            nodos_sy = int(disty/min) + 1
+            nodos_sy = int(disty/min) + 1 # Cantidad de nodos que faltan para que que la altura del conductor esté dentro de la altura del espacio de estudio
             assert np.abs(x_coor) < Sx, f'bajo dimensionamiento, utiliza un radio mayor, o selecciona más nodos: {nodos_sx+nodosx}, o bien ubica a menor distancia x_coor, la dif x-Sx es {distx}'
-            assert np.abs(y_coor) < Sy, f'bajo dimensionamiento, utiliza un radio mayor, o selecciona más nodos: {nodos_sy+nodosy}, o bien ubica a menor distancia y_coor, la dif x-Sx es {disty}'
+            assert np.abs(y_coor) < Sy, f'bajo dimensionamiento, utiliza un radio mayor, o selecciona más nodos: {2*(nodos_sy+nodosy)}, o bien ubica a menor distancia y_coor, la dif y-Sy es {disty}'
         elif (sx is not None and sy is not None) and (nodox is None and nodoy is None):
             Sx, Sy = sx, sy
             x, y, nodosx, nodosy = malla(min, Sx, Sy, nodox=None, nodoy=None)
@@ -524,8 +527,14 @@ if __name__ == "__main__":
         Vm2[-1,:] = 0 # borde inferior
         return Vm,Vm2
     
+    def f1(vol, vol_co):
+        # Usado solo para caso de conductores fasciculados
+        return 1.1339 - 0.1678*(vol/vol_co) + 0.03*(vol/vol_co)**2
+
     ## Ocupa el negativo del gradiente del potencial calculado
-    def calcular_campo_electrico(V, dx, dy):
+    def calcular_campo_electrico(V, Vo, dx, dy, posicion_cond, Evv, Vco, kapzov_borde=False, bundle=False):
+        print(f"posicion_cond dentro de la funcion calcular_campo es {posicion_cond}")
+        posy, posx = posicion_cond
         # Inicializar las matrices para los componentes del campo eléctrico
         Ex = np.zeros_like(V)
         Ey = np.zeros_like(V)
@@ -539,20 +548,38 @@ if __name__ == "__main__":
         Ey[-1, :] = (V[-1, :] - V[-2, :]) / dy  # Borde inferior
         Ex[:, 0] = -(V[:, 1] - V[:, 0]) / dx  # Borde izquierdo
         Ex[:, -1] = -(V[:, -1] - V[:, -2]) / dx  # Borde derecho
-        
+        if kapzov_borde:
+            if bundle:
+                print(f"Hay conductores fasciculados")
+                print(f"el voltaje aplicado es {Vo}")
+                Evv *= f1(Vo, Vco)
+                print(f"El nuevo gradiente superficial depende de {Vo/1000} kV y es {Evv/(10**5)} kV/cm")
+            # Calcular el módulo del campo eléctrico en cada punto
+            E_magnitud = np.sqrt(Ex**2 + Ey**2)
+            chi_sur = E_magnitud[posy+1, posx]/Evv
+            chi_norte = E_magnitud[posy-1, posx]/Evv
+            chi_este = E_magnitud[posy, posx+1]/Evv
+            chi_oeste = E_magnitud[posy, posx-1]/Evv
+            Ex[posy+1, posx] /= chi_sur
+            Ex[posy-1, posx] /= chi_norte
+            Ex[posy, posx+1] /= chi_este
+            Ex[posy, posx-1] /= chi_oeste
+            Ey[posy+1, posx] /= chi_sur
+            Ey[posy-1, posx] /= chi_norte
+            Ey[posy, posx+1] /= chi_este
+            Ey[posy, posx-1] /= chi_oeste
         # Calcular el módulo del campo eléctrico en cada punto
         E_magnitud = np.sqrt(Ex**2 + Ey**2)
-        
         return Ex, Ey, E_magnitud
     
-    def algoritmo_rho_V(V, rho_ini, rho_b, max_iter_rho, dx, dy, mov, wx,wy, val, pos, condi='si', copia='si',
-                        rho_h=False, visu=15, nombre=None, muestra=False, fi=30):
+    def algoritmo_rho_V(V, Vo, Vco, rho_ini, rho_b, max_iter_rho, dx, dy, mov, wx, wy, val, pos, Evv, condi='si', copia='si',
+                        rho_h=False, visu=15, nombre=None, muestra=False, fi=30, is_bundled=False):
         py1 ,px1 = pos
         rho1 = rho_ini.copy() # Parte con una distribución con ceros y las condiciones de borde, luego se actulizan los valores
         rho1 = rho1.astype(complex)
-        rho1 = Dist_ValA(rho1, rho_b, val, px1, py1, in_condct=condi,copia=copia)
+        rho1 = Dist_ValA(rho1, rho_b, val, px1, py1, in_condct=condi, copia=copia)
         # En un comienzo se tiene el campo eléctrico electrostático
-        Exxi, Eyyi, Em = calcular_campo_electrico(V, dx, dy)
+        Exxi, Eyyi, Em = calcular_campo_electrico(V, Vo, dx, dy, pos, Evv, Vco, kapzov_borde=True, bundle=is_bundled)
         Ewx = Exxi + wx/mov
         Ewy = Eyyi + wy/mov
         a = 1/epsilon0
@@ -799,8 +826,8 @@ if __name__ == "__main__":
         rho_boundary = Dist_ValA(rho_boundary, rho_inicial, rho_i, posx_conductor, posy_conductor, in_condct=con_condct, copia=copiado)
         return rho_inicial, rho_boundary, rho_i
 
-    def iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, mov, windx, windy, max_iter_rho, max_iter,
-                        it_global, visu=15, con_condct='si', copiado='no', must = False, fi=30):
+    def iterar_potencial(Vmi, Vo, Vco, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, mov, windx, windy, max_iter_rho, max_iter, Evv,
+                        it_global, visu=15, con_condct='si', copiado='no', must = False, fi=30, is_bundled=False):
         """Itera para calcular el potencial eléctrico y la densidad de carga."""
         Vm = np.zeros_like(Vmi)
         difer_global = []
@@ -810,8 +837,8 @@ if __name__ == "__main__":
             if n == 0:
                 print('Primer rho')
                 rho_n = algoritmo_rho_V(
-                    Vmi, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov, windx, windy, rho_i, fixed_point,
-                    condi=con_condct, copia=copiado, rho_h=False, visu=visu, nombre='rho', muestra=must, fi=fi
+                    Vmi, Vo, Vco, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov, windx, windy, rho_i, fixed_point, Evv,
+                    condi=con_condct, copia=copiado, rho_h=False, visu=visu, nombre='rho', muestra=must, fi=fi, is_bundled=is_bundled
                 )
             else:
                 print(f'Comienza nueva actualización de rho número {n + 1}')
@@ -828,11 +855,11 @@ if __name__ == "__main__":
             print(f'se alcanzó el máximo de iteraciones: {n}')
         return Vm, rho_n
 
-    def calcular_resultados_finales(Vm, Vmi, rho_n, dx, dy, mov, windx, windy, l):
+    def calcular_resultados_finales(Vm, Vo, Vco, Vmi, rho_n, dx, dy, mov, windx, windy, l, posicion_cond, Evv, is_bundled=False):
         """Calcula el campo eléctrico, densidad de corriente y verifica la convergencia."""
         Vol_def = Vm + Vmi
-        Exxini, Eyyini, Eini =calcular_campo_electrico(Vmi, dx, dy)
-        Edefx, Edefy, Edef = calcular_campo_electrico(Vol_def, dx, dy)
+        Exxini, Eyyini, Eini =calcular_campo_electrico(Vmi, Vo, dx, dy, posicion_cond, Evv, Vco, kapzov_borde=False, bundle=False)
+        Edefx, Edefy, Edef = calcular_campo_electrico(Vol_def, Vo, dx, dy, posicion_cond, Evv, Vco, kapzov_borde=True, bundle=is_bundled)
         Ei = Edef[encuentra_nodos(x, y, 0, l)[1],  :] # Magnitud campo eléctrico nivel de piso
         J = rho_n * mov * np.sqrt((Edefx + (windx / mov))**2 + (Edefy + (windy / mov))**2)
         Jave = np.mean(J[-1,:]) # Promedio densidad de corriente a nivel  de piso
@@ -841,9 +868,9 @@ if __name__ == "__main__":
         Campo_fin = [Edefx, Edefy, Edef]
         return Jave, Ji, Campo_ini, Campo_fin, Ei
 
-    def ejecutar_algoritmo(fixed_point, fixed_value, X, Y, R, Q, Sx, mov, m, delta, g0, nodosy, nodosx, posx_conductor, posy_conductor, yco,
-                            dx, dy, windx, windy, max_iter_rho, max_iter, it_global, l, visualizacion, Jp_inicial,
-                            tolerancia=[1-1e-5,1+1e-5], condct='si', copy='no', Muestra=False):
+    def ejecutar_algoritmo(fixed_point, fixed_value, Vco, X, Y, R, Q, Sx, mov, m, delta, g0, nodosy, nodosx, posx_conductor, posy_conductor, yco,
+                            dx, dy, windx, windy, max_iter_rho, Evv, max_iter, it_global, l, visualizacion, Jp_inicial,
+                            tolerancia=[1-1e-5,1+1e-5], condct='si', copy='no', Muestra=False, is_bundled=False):
         """Ejecuta el algoritmo completo ajustando Jp hasta cumplir la condición de convergencia."""
         Jp = Jp_inicial
         convergencia_lograda = False
@@ -857,22 +884,26 @@ if __name__ == "__main__":
             # Paso 2: Inicializar densidades
             rho_inicial, rho_boundary, rho_i = inicializar_densidad(Sx, Jp, mov, R, m, delta, fixed_value, yco, g0, nodosy, nodosx, posx_conductor, posy_conductor)
             # Paso 3: Iterar para calcular Vm y rho
-            Vm, rho_n = iterar_potencial(Vmi, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, mov, windx, windy, max_iter_rho, max_iter,
-                                        it_global, visu=visualizacion, con_condct=condct, copiado=copy, must=Muestra, fi = fi)
+            Vm, rho_n = iterar_potencial(Vmi, fixed_value, Vco, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, mov, windx, windy, max_iter_rho, max_iter, Evv,
+                                        it_global, visu=visualizacion, con_condct=condct, copiado=copy, must=Muestra, fi = fi, is_bundled=is_bundled)
             #fi += 1
             visualizacion += 2
             # Paso 4: Calcular resultados finales
             Vol_def = Vm+Vmi
-            Jave, Ji, Campo_ini, Campo_fin, Ei = calcular_resultados_finales(Vm, Vmi, rho_n, dx, dy, mov, windx, windy, l)
+            Jave, Ji, Campo_ini, Campo_fin, Ei = calcular_resultados_finales(Vm, fixed_value, Vco, Vmi, rho_n, dx, dy, mov, windx, windy, l, fixed_point, Evv, is_bundled=is_bundled)
             print(f'Jp promedio calculado: {Jave * 1e9} nA/m^2')
             print(f'Jp promedio propuesto: {Jp * 1e9} nA/m^2')
             cont += 1
-            if (Jave / Jp) <= tolerancia[1] and (Jave / Jp) >= tolerancia[0]:
-                convergencia_lograda = True
-                print('Convergencia alcanzada!')
+            if Jp != float(0):
+                if (Jave / Jp) <= tolerancia[1] and (Jave / Jp) >= tolerancia[0]:
+                    convergencia_lograda = True
+                    print('Convergencia alcanzada!')
+                else:
+                    resto = Jave - Jp
+                    Jp += resto  # Ajustar Jp
             else:
-                resto = Jave - Jp
-                Jp += resto  # Ajustar Jp
+                convergencia_lograda = True
+                print('No hay efecto corona por lo que no hay corriente de iones a nivel de suelo')
         if cont==10:
             print('Hubieron {10} iteraciones sin conseguir el mismo Jp')
         else:
@@ -1024,6 +1055,9 @@ if __name__ == "__main__":
     area = float(params["Área (mm²)"])
     cantidad = int(params["Subconductores"])
     sep = float(params["Separación (cm)"])
+    is_bundled = False
+    if sep > 0:
+        is_bundled = True
     es_cm = True # si separacion está en cm entonces es True
     es_mcm = False # si  aárea está en mm2 entonces es False
     conversion = 0.5067  # Conversión de MCM a mm²
@@ -1139,10 +1173,10 @@ if __name__ == "__main__":
     V = [Vol]
     Q = np.dot(np.linalg.inv(P),V) # Se determinan las cargas de los conductores
 
-    Campo_ini, Vmi, rho_n, Vm, Vol_def, Campo_fin, Ei, Ji, Jave = ejecutar_algoritmo(fixed_point, fixed_value, X, Y, Req, Q, Sx, mov, m, delta, g0, nodosy,
-                                                                            nodosx, posx_conductor, posy_conductor, y_coor, dx, dy, windx, windy, max_iter_rho,
+    Campo_ini, Vmi, rho_n, Vm, Vol_def, Campo_fin, Ei, Ji, Jave = ejecutar_algoritmo(fixed_point, fixed_value, evv*1000, X, Y, Req, Q, Sx, mov, m, delta, g0, nodosy,
+                                                                            nodosx, posx_conductor, posy_conductor, y_coor, dx, dy, windx, windy, max_iter_rho, Evv*10**5,
                                                                                 max_iter, it_global, l, visualizacion, Jp_inicial=Jp_inicial,
-                                                                                tolerancia=Tolerancia, condct=in_condct, copy=copiado, Muestra=mostrar)
+                                                                                tolerancia=Tolerancia, condct=in_condct, copy=copiado, Muestra=mostrar, is_bundled=is_bundled)
 
     Exxini, Eyyini, Em = Campo_ini
     Edefx, Edefy, Edef = Campo_fin
@@ -1406,6 +1440,28 @@ if __name__ == "__main__":
         else:
             plt.close()
         
+    
+    # Crear una ventana emergente para preguntar al usuario
+    def preguntar_nuevo_modelo():
+        ventana = tk.Tk()
+        ventana.title("Nuevo modelo")
+        ventana.geometry("300x150")
+        
+        label = tk.Label(ventana, text="¿Desea iniciar un nuevo modelo?", font=("Arial", 12))
+        label.pack(pady=10)
+        
+        # Acción al presionar el botón
+        def iniciar_nuevo_modelo():
+            plt.close("all")  # Cierra todas las figuras de Matplotlib
+            ventana.destroy()  # Cierra la ventana emergente
+            print("Nuevo modelo iniciado.")  # Aquí puedes iniciar el nuevo modelo
+        
+        boton = tk.Button(ventana, text="Iniciar nuevo modelo", command=iniciar_nuevo_modelo, bg="lightblue")
+        boton.pack(pady=10)
+        
+        # Permitir que la ventana se cierre sin bloquear las figuras
+        ventana.protocol("WM_DELETE_WINDOW", ventana.destroy)
+        ventana.mainloop()
 
     def show_plot(graf, ruta, guarda=False):
         """
@@ -1433,9 +1489,8 @@ if __name__ == "__main__":
         for key, func in graficos.items():
             func()  # Genera y guarda/muestra según corresponda
         plt.show(block=False)  # No bloquea la ejecución
-        answer = input("¿Desea ejecutar otro modelo?: (y: si/otra tecla: no)    ")
-        if answer == "y":
-            plt.close("all")
+        # Llamar a la ventana emergente
+        preguntar_nuevo_modelo()
 
 
     carpeta = f"modelo_{Vol/1000}_{cantidad}_{y_coor}_{nodosx}_{nodosy}"
