@@ -952,7 +952,10 @@ if __name__ == "__main__":
 
             # Preparar los datos extra para cada hoja
             datos_conductores = {
+                "Tipo": [tipo],
+                "Nombre": [nombre],
                 "Área (mm²)": [area],
+                "Diámetro (mm)": [diametro],
                 "Subconductores": [cantidad],
                 "Separación (cm)": [sep],
                 "Voltaje (kV)": [Vol/1000],
@@ -1052,7 +1055,10 @@ if __name__ == "__main__":
     # Desestructurar el diccionario en variables específicas
     
     # Extraer parámetros necesarios
-    area = float(params["Área (mm²)"])
+    #area = float(params["Área (mm²)"])
+    tipo, nombre, areas = params["Área (mm²)"]
+    area =float(areas[0])
+    diametro = float(areas[1])
     cantidad = int(params["Subconductores"])
     sep = float(params["Separación (cm)"])
     is_bundled = False
@@ -1079,7 +1085,7 @@ if __name__ == "__main__":
     viento_y = float(params["Viento y (m/s)"])
     modo = str(params["Modo (str)"])
     rug =  float(params["Rugosidad terreno"])
-    m = float(params["factor conductor"])
+    m = float(params["Estado sup cond 1"])
     l = float(params["Medición (m)"])
     gra = params["graficos"]
     print(f"los graficos seleccionados son {gra}")

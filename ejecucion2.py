@@ -7,6 +7,9 @@ import numpy as np
 import json
 import subprocess
 import math as ma
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
+import math
 
 plt.close('all')
 
@@ -17,7 +20,9 @@ estados_graficos = {
     "Vdef": False, "Ef": False, "J1": False, "E1": False, "SPv": False, "Rhon": False
 }
 graficos = []
-
+estado_guardado = False
+estado_area = False
+todos_seleccionados = False
 def alternar_grafico(nombre, mostrar_mensaje=True):
     """
     Alterna el estado de un gráfico, actualiza la lista de gráficos seleccionados y muestra un mensaje opcional.
@@ -44,7 +49,37 @@ def alternar_grafico(nombre, mostrar_mensaje=True):
     
     # Imprimir el estado actual de la lista (opcional)
     print(f"Gráficos seleccionados: {graficos}")
-todos_seleccionados = False
+
+def Hay_corona(Vol, Ev, ev):
+    '''
+    Vol: en kV
+    Sep: en cm
+    r: en cm
+    '''
+    if ev <= np.abs(Vol):
+        print(f"{Vol} kV >= {ev} kV, hay efecto corona")
+        return True
+    else:
+        print(f"{Vol} kV < {ev} kV, no hay efecto corona")
+        return False
+    
+def grad_sup(g0, m, delta, r):
+    Ev = g0*delta*m*(1+0.301/np.sqrt(delta*r))
+    return  Ev
+
+def Vol_crit(Ev, Sep, r):
+    print(f"los parametros para Vol_crit son", Ev, Sep, r)
+    ev = Ev*r*np.log(Sep/r)
+    return ev
+
+def pressure_height(altura,tempe):
+    P0  = 101325 # Pa
+    M = 0.029 # Kg/mol
+    g =  9.8 # m/s^2
+    R0 = 8.314 # J/mol K
+    P = P0*np.e**(-g*M*altura/(R0*tempe))
+    return P/1000 # en kPa
+
 def seleccionar_todos():
     """
     Alterna la selección de todos los gráficos.
@@ -135,11 +170,6 @@ def radio_eq(radio, numero, distancia):
     Retorna:
         Radio equivalente del conductor.
     """
-    #if numero==1:
-    #    r_eq = radio
-    #else:
-    #    r_eq = distancia * (radio / distancia)**(1 / numero)
-    #return 1.09 * r_eq if numero == 4 else r_eq
     return (radio*numero*distancia**(numero-1))**(1/numero)
 
 def calculo_radio_eq(numero, area_sub, sepa, conversion=1, es_mcm=False, es_cm=False):
@@ -219,17 +249,19 @@ def verificar_discretizacion(min, sx, sy, nodox, nodoy, x_coor, y_coor):
             return False
         # Si no hay problemas, retornar True
         return True
-
+    return True
 
 # Botón Bipolar para activar/desactivar las casillas extra
 def activar_bipolar():
     # Activar o desactivar las casillas extras
     if boton_bipolar_var.get():  # Si se selecciona el botón Bipolar
+        menu_tipo2.configure(state="normal")
+        menu_nombre2.configure(state="normal")
         entradas["Voltaje 2 (kV)"].config(state="normal")
-        entradas["Área 2 (mm²)"].config(state="normal")
+        #entradas["Área 2 (mm²)"].config(state="normal")
         entradas["Posición en x 2 (m)"].config(state="normal")
         entradas["Posición en y 2 (m)"].config(state="normal")
-        entradas["factor conductor 2"].config(state="normal")
+        entradas["Estado sup cond 2"].config(state="normal")
         entradas["Movilidad iónica 2 (m2/kVs)"].config(state="normal")
         entradas["Recombinación (μm^3/s)"].config(state="normal")
         entradas["Jp (nA/m^2)"].config(state="disabled")
@@ -238,28 +270,38 @@ def activar_bipolar():
         boton_Rhop.config(state=tk.NORMAL)
         boton_Rhon.config(state=tk.NORMAL)
     else:  # Si el botón Bipolar está desmarcado
+        menu_tipo2.configure(state="disabled")
+        menu_nombre2.configure(state="disabled")
         # Eliminar el contenido actual de las casillas
         entradas["Voltaje 2 (kV)"].config(state="disabled")
-        entradas["Área 2 (mm²)"].config(state="disabled")
+        #entradas["Área 2 (mm²)"].config(state="disabled")
         entradas["Posición en x 2 (m)"].config(state="disabled")
         entradas["Posición en y 2 (m)"].config(state="disabled")
-        entradas["factor conductor 2"].config(state="disabled")
+        entradas["Estado sup cond 2"].config(state="disabled")
         entradas["Movilidad iónica 2 (m2/kVs)"].config(state="disabled")
         entradas["Recombinación (μm^3/s)"].config(state="disabled")
         entradas["Jp (nA/m^2)"].config(state="normal")
+
         boton_Spd.config(state=tk.DISABLED)
         boton_Rhop.config(state=tk.DISABLED)
         boton_Rhon.config(state=tk.DISABLED)
-
-        
-        # Establecer x2 y y2 como None para que no se grafiquen
-        #global x2, y2  # Si las variables x2 y y2 son globales
-        #x2, y2 = None, None
         
         # Si ya había un gráfico previo, eliminar los puntos asociados a x2, y2
         plt.close('all')  # Cierra el gráfico previo
         # Redibujar solo los puntos x, y (sin x2, y2)
         validar_campos_y_graficar()  # Esto vuelve a graficar los puntos con las nuevas configuraciones
+
+def activar_desarrollador():
+    if boton_desarrollador_var.get():
+        entradas["Max iter rho"].config(state="normal")
+        entradas["Max iter V"].config(state="normal")
+        entradas["Max iter Gob"].config(state="normal")
+        entradas["Interior conductor"].config(state="normal")
+    else:
+        entradas["Max iter rho"].config(state="disabled")
+        entradas["Max iter V"].config(state="disabled")
+        entradas["Max iter Gob"].config(state="disabled")
+        entradas["Interior conductor"].config(state="disabled")
 
 def activar_auto_red():
     """Controla el estado de las casillas según el botón 'Auto red'."""
@@ -317,67 +359,143 @@ def restablecer_valores():
             entradas[entrada].insert(0, valores_por_defecto[entrada])
 
 
-def ejecutar_script():
-    # Guardar todos los parametros en un diccionario
-    params = {nombre: entrada.get() for nombre, entrada in entradas.items()}
+def obtener_area_escogida(entrada_area):
+    # Obtener la clave y color seleccionados para el área
+    llave = str(entrada_area[0].get())
+    color = str(entrada_area[1].get())
+    lista_opciones = opciones_subcon[llave]
+    # Buscar el valor correspondiente al color seleccionado
+    for color_opcion, valor1, valor2 in lista_opciones:
+        if color_opcion == color:
+            val = [valor1, valor2]
+            return val # area y diametro mm^2 y mm
+    return None  # En caso de que no se encuentre el color
+
+import json
+from tkinter import messagebox
+import subprocess
+
+def procesar_entradas():
+    params = {}
+    for nombre, entrada in entradas.items():
+        if isinstance(entrada, list):
+            # Si la entrada es una lista, obtener los valores serializables
+            params[nombre] = [elem.get() if hasattr(elem, 'get') else elem for elem in entrada]
+        elif hasattr(entrada, 'get'):  
+            # Si es un widget con 'get' (Entry, Combobox, etc.), usar su valor
+            params[nombre] = entrada.get()
+        else:
+            # Si es otro tipo (cadena, entero, etc.), asignarlo directamente
+            params[nombre] = entrada
+    # Agregar otros parámetros generales
     params['graficos'] = graficos
     params['guardar'] = estado_guardado
-    # Crear un mensaje con los valores
-    mensaje = "\n".join([f"{clave}: {valor}" for clave, valor in params.items()])
-    # Mostrar un cuadro de diálogo con los valores
-    messagebox.showinfo("Parámetros Guardados", mensaje)
-    # Convertir los parámetros a JSON
-    params_json = json.dumps(params)
-    if boton_bipolar_var.get():
-        # Ejecutar el script bipolar con los parámetros
-        subprocess.run(["python", "script_ejecucion_bip.py", params_json], check=True)
-        messagebox.showinfo("Éxito", "El archivo bipolar.py se ejecutó correctamente.")
-    else:
-        # Ejecutar el script unipolar con los parámetros
-        subprocess.run(["python", "script_ejecucion_uni.py", params_json], check=True)
-        messagebox.showinfo("Éxito", "El archivo unipolar.py se ejecutó correctamente.")
-    
+    return params
 
-def process_area(nombre, entradas, cantidad, sep):
-    area = float(entradas[nombre].get())
+def ejecutar_script():
+    # Procesar el área principal
+    # Procesar todas las entradas y convertirlas en un diccionario
+    params = procesar_entradas()
+
+    # Mostrar los parámetros en un cuadro de diálogo
+    mensaje = "\n".join([f"{clave}: {valor}" for clave, valor in params.items()])
+    messagebox.showinfo("Parámetros Guardados", mensaje)
+
+    try:
+        # Convertir parámetros a JSON
+        params_json = json.dumps(params)
+        
+        # Ejecutar el script correspondiente
+        script = "script_ejecucion_bip.py" if boton_bipolar_var.get() else "script_ejecucion_uni.py"
+        subprocess.run(["python", script, params_json], check=True)
+        
+        # Notificar éxito
+        messagebox.showinfo("Éxito", f"El archivo {script} se ejecutó correctamente.")
+    except Exception as e:
+        # Notificar error
+        messagebox.showerror("Error", f"Ocurrió un error al ejecutar el script: {str(e)}")
+
+
+def process_area(area, cantidad, sep):
     Req, R = calculo_radio_eq(cantidad, area, sep, conversion=0.5067, es_mcm=False, es_cm=True) # están en cm
     print(f"radio eq {Req} cm y radio subconductor {R} cm")
     Req /= 100 # en m
     R /= 100
     print(f'{Req},{R} en metros')
-    return Req, R
+    return Req, R # devuelve en metros
+
+def verificar_selecciones():
+    if not tipo_conductor.get():
+        return "El tipo de conductor no está seleccionado."
+    if not nombre_conductor.get():
+        return "El nombre del conductor no está seleccionado."
+    if boton_bipolar_var.get():
+        if not tipo_conductor2.get():
+            return "El tipo de conductor 2 no está seleccionado."
+        if not nombre_conductor2.get():
+            return "El nombre del conductor 2 no está seleccionado."
+    return None
+def mostrar_error(mensaje):
+    messagebox.showwarning("Error", mensaje)
+
+def extrae_radios(cantidad, sepa):
+    # devuelve [R1, 10**10] si unipolar
+    # devuelve [R1, R2] si bipolar
+    radios = []
+    area1 = entradas["Área (mm²)"][2][0]
+    Req, R = process_area(area1, cantidad, sepa) # en metros
+    radios.append(Req)
+    if boton_bipolar_var.get():
+        area2 = entradas["Área 2 (mm²)"][2][0]
+        Req2, R2 = process_area(area2, cantidad, sepa)
+        radios.append(Req2)
+    else:
+        radios.append(10**10)
+    return radios
 
 def validar_campos_y_ejecutar():
+    global estado_area
     # Obtener valor de cantidad
     cantidad = entrada_cantidad.get()
     try:
         cantidad = int(cantidad)
+        print(f"cantidad de subconductores es {cantidad}")
     except ValueError:
         cantidad = 0
+        mostrar_error("La cantidad de subconductores debe ser un número entero.")
+        return
     sx = obtener_parametro(entradas["Ancho (m)"].get(), float)  # (m) Media longitud del plano de tierra
     sy = obtener_parametro(entradas["Altura (m)"].get(), float)  # (m) Altura del área de estudio respecto de tierra
     nodox = obtener_parametro(entradas["nodos x"].get(), int)  # Número de nodos en x
     nodoy = obtener_parametro(entradas["nodos y"].get(), int)  # Número de nodos en y
-    sep = float(entradas["Separación (cm)"].get())
+    try:
+        sep = float(entradas["Separación (cm)"].get())
+        print(f"la separación es {sep}")
+    except:
+        messagebox.showwarning("Advertencia", "La separación debe ser un número.")
+        return
     radios =  []
     for nombre, entrada in entradas.items():
+        #print(f"la entrada es {entrada}")
         if nombre == "Separación (m)" and cantidad <= 1:
-            continue  # Ignorar esta casilla
-        if nombre == "Rugosidad terreno":
+           continue  # Ignorar esta casilla
+        elif nombre == "Subconductores":
             continue
-        if nombre == "Ancho (m)":
+        elif nombre == "Rugosidad terreno":
+            continue
+        elif nombre == "Ancho (m)":
             #sx = entradas[nombre].get()
             continue  # Ignorar esta casilla
-        if nombre == "Altura (m)":
+        elif nombre == "Altura (m)":
             #sy = entradas[nombre].get()
             continue
-        if nombre == "nodos x":
+        elif nombre == "nodos x":
             #nodox = entradas[nombre].get()
             continue  # Ignorar esta casilla
-        if nombre == "nodos y":
+        elif nombre == "nodos y":
             #nodoy = entradas[nombre].get()
             continue
-        if nombre == "Posición en x (m)":
+        elif nombre == "Posición en x (m)":
             x1 = float(entradas[nombre].get().strip())  # Obtener el valor de la casilla "Posición en x (m)"
             x2 = float(entradas["Posición en x 2 (m)"].get().strip())  # Obtener el valor de la casilla "Posición en x 2 (m)"
             if x1 - x2 == 0 and boton_bipolar_var.get():
@@ -385,22 +503,26 @@ def validar_campos_y_ejecutar():
                     "Advertencia", "En modo Bipolar, los conductores no pueden estar en la misma posición"
                 )
                 return
-        if nombre == "Posición en y (m)":
+        elif nombre == "Onset corona (kV)":
+            continue
+        elif nombre == "Corona gradient (kV/cm)":
+            continue
+        elif nombre == "Posición en y (m)":
             y1 = float(entradas[nombre].get())
         
-        if nombre == "Área (mm²)":
-            Req, R = process_area(nombre, entradas, cantidad, sep)
-            radios.append(Req)
-            print(f"radios hasta ahora es {radios}")
-            if boton_bipolar_var.get():
-                name = "Área 2 (mm²)"
-                Req2, R2 = process_area(name, entradas, cantidad, sep)
-                radios.append(Req2)
+        elif nombre == "Área (mm²)":
+            if estado_area:
+                radios = extrae_radios(cantidad, sep)
             else:
-                radios.append(10**10)
-
-        valor = entrada.get().strip()  # Obtener valor sin espacios adicionales
-
+                verificar_estado_area()
+                radios = extrae_radios(cantidad, sep)
+            estado_area = False
+            continue
+        elif nombre == "Área 2 (mm²)":
+            continue
+        else:
+            valor = entradas[nombre].get().strip()  # Obtener valor sin espacios adicionales
+        print(f"el valor de {nombre} es {valor}")
         # Validar campo vacío
         if not valor:
             messagebox.showwarning("Advertencia", f"No pueden haber casillas vacías (revisar: {nombre}).")
@@ -453,11 +575,111 @@ def validar_campos_y_ejecutar():
                 messagebox.showwarning("Advertencia", f"El valor de {campo} debe ser un número válido o estar vacío.")
                 return
     print(f"los radios son {radios}")
+    print(f"el sx y sy son {sx} y {sy}")
+    print(f"el nodox y nodoy son {nodox} y {nodoy}")
     verificado = verificar_discretizacion(np.min(radios), sx, sy, nodox, nodoy, x1, y1)
     if not verificado:
         return
     messagebox.showinfo("Validación exitosa", "Todos los campos han sido completados correctamente.")
+    '''
+    Vol1 = entradas["Voltaje (kV)"].get() # kV
+    m1 = entradas["Estado sup cond 1"].get()
+    Vol2 = entradas["Voltaje 2 (kV)"].get() # kV
+    m2 = entradas["Estado sup cond 2"].get()
+    delta = param_corona()
+    Von1, Egrad1 = calcula_corona(sep, radios[0], delta, m1, g0) # Se crean los elementos Ev, ev en el diccionarios
+    Von2, Egrad2 = calcula_corona(sep, radios[1], delta, m2, g0) 
+    corona1 = Hay_corona(Vol1, Egrad1, Von1)
+    corona2 = Hay_corona(Vol2, Egrad2, Von2)
+    if corona1 or corona2:
+        messagebox.showinfo("Advertencia", f"Se verifica que si hay efecto corona en los conductores.\n"
+                            f"Voltaje aplicado {Vol} kV >= Voltaje crítico {Von} kV y gradiente superficial {Egrad} kV/cm")
+    else:
+        messagebox.showinfo("Advertencia", "Se verifica que no hay efecto corona en los conductores.\n"
+                            f"Voltaje aplicado {Vol} kV < Voltaje crítico {Von} kV y gradiente superficial {Egrad} kV/cm")
+    '''
+    y1 = float(entradas["Posición en y (m)"].get())
+    if boton_bipolar_var.get():
+        y2 = float(entradas["Posición en y 2 (m)"].get())
+    else:
+        y2 = 0
+    alturas = np.array([y1, y2])
+    verificar_corona(alturas*100, np.array(radios)*100) # en centimetros el radio
+    
     ejecutar_script()
+
+
+def verificar_corona(alturas, radios):
+    # Obtener valores desde el diccionario `entradas`
+    Vol1 = float(entradas["Voltaje (kV)"].get())  # kV
+    m1 = float(entradas["Estado sup cond 1"].get())
+    print(f"el radio1 es {radios[0]}")
+    print(f"el radio2 es {radios[1]}")
+    delta = param_corona()
+    
+    # Calcular para el primer conductor
+    Von1, Egrad1 = calcula_corona(alturas[0], radios[0], delta, m1, g0)
+    corona1 = Hay_corona(Vol1, Egrad1, Von1)
+    
+    # Detalles del efecto corona
+    detalles = f"Conductor 1:\n"
+    if corona1:
+        detalles += (f"Voltaje aplicado: {Vol1} kV >= Voltaje crítico: {Von1:.2f} kV\n"
+                     f"Gradiente superficial: {Egrad1:.2f} kV/cm\n\n")
+    else:
+        detalles += (f"Voltaje aplicado: {Vol1} kV < Voltaje crítico: {Von1:.2f} kV\n"
+                     f"Gradiente superficial: {Egrad1:.2f} kV/cm\n\n")
+    
+    # Verificar si se deben calcular los valores para el segundo conductor
+    if boton_bipolar_var.get():
+        Vol2 = float(entradas["Voltaje 2 (kV)"].get())  # kV
+        m2 = float(entradas["Estado sup cond 2"].get())
+        
+        # Calcular para el segundo conductor
+        Von2, Egrad2 = calcula_corona(alturas[1], radios[1], delta, m2, g0)
+        corona2 = Hay_corona(Vol2, Egrad2, Von2)
+        
+        detalles += f"Conductor 2:\n"
+        if corona2:
+            detalles += (f"Voltaje aplicado: {Vol2} kV >= Voltaje crítico: {Von2:.2f} kV\n"
+                         f"Gradiente superficial: {Egrad2:.2f} kV/cm\n\n")
+        else:
+            detalles += (f"Voltaje aplicado: {Vol2} kV < Voltaje crítico: {Von2:.2f} kV\n"
+                         f"Gradiente superficial: {Egrad2:.2f} kV/cm\n\n")
+    else:
+        detalles += "El cálculo para el conductor 2 no fue realizado.\n"
+    
+    # Mostrar el mensaje de advertencia
+    if corona1 or (boton_bipolar_var.get() and corona2):
+        messagebox.showinfo("Advertencia", f"Se verifica que sí hay efecto corona en los conductores.\n\n{detalles}")
+    else:
+        messagebox.showinfo("Advertencia", f"Se verifica que no hay efecto corona en los conductores.\n\n{detalles}")
+
+
+P0 = 101.3  # kPa
+T0 = 298.15  # Kelvin
+g0 = 29.8 # kV/cm
+def param_corona():
+    altura = float(entradas["Altitud (m)"].get()) # m
+    Tem = float(entradas["Temperatura (°C)"].get()) + 273.15 # Kelvin
+    Pres = pressure_height(altura, Tem)  # kPa
+    delta = Pres * T0 / (P0 * Tem)  # Densidad del aire
+    return delta
+    
+
+
+def calcula_corona(Sep, r, delta, m, g0):
+    '''
+    Vol en kV
+    Sep en cm
+    r en cm
+    g0 en kV/cm
+    '''
+    Ev= grad_sup(g0, m, delta, r)
+    ev = Vol_crit(Ev, Sep, r)
+    entradas["Onset corona (kV)"] = ev
+    entradas["Corona gradient (kV/cm)"] = Ev
+    return ev, Ev
 
 # Inicialización global de canvas
 canvas = None
@@ -478,14 +700,19 @@ def inicializar_grafico():
     fig, ax = plt.subplots(figsize=(5, 5))
     xs = [x]
     ys = [y]
-
+    v1 = float(entradas["Voltaje (kV)"].get())
+    v2 = float(entradas["Voltaje 2 (kV)"].get())
+    volts = [v1, v2] if boton_bipolar_var.get() else [v1]
     # Graficar puntos iniciales
-    graficar_puntos(fig, ax, xs, ys, cantidad, separacion, ancho_mitad, altura_total)
+    graficar_puntos(fig, ax, xs, ys, cantidad, separacion, ancho_mitad, altura_total, volts)
 
 
 def validar_campos_y_graficar():
     # Cerrar todas las figuras de Matplotlib previas si existen
     plt.close('all')  # Asegura que las figuras de Matplotlib se cierren correctamente
+    v1 = float(entradas["Voltaje (kV)"].get())
+    v2 = float(entradas["Voltaje 2 (kV)"].get())
+    volts = [v1, v2] if boton_bipolar_var.get() else [v1]
     try:
         x = float(entrada_posicion_x.get())
         y = float(entrada_posicion_y.get())
@@ -558,9 +785,9 @@ def validar_campos_y_graficar():
         ys = [y]
 
     # Llamar a la función para graficar los puntos
-    graficar_puntos(fig, ax, xs, ys, cantidad, separacion, ancho_mitad, altura_total)
+    graficar_puntos(fig, ax, xs, ys, cantidad, separacion, ancho_mitad, altura_total, volts)
 
-def graficar_puntos(fig, ax, x, y, cantidad, separacion, ancho_mitad, altura_total):
+def graficar_puntos(fig, ax, x, y, cantidad, separacion, ancho_mitad, altura_total, volts):
     # Configurar límites
     ax.set_xlim(-ancho_mitad, ancho_mitad)
     ax.set_ylim(0, altura_total)
@@ -569,37 +796,58 @@ def graficar_puntos(fig, ax, x, y, cantidad, separacion, ancho_mitad, altura_tot
     ax.set_ylabel("y (m)")
     ax.grid(True)
 
+    # Normalizar los valores absolutos de volts para usar un colormap, con rango fijo [0, 1500]
+    vmin, vmax = 0, 1200
+    norm = Normalize(vmin=vmin, vmax=vmax)
+    colormaps = [plt.cm.Blues, plt.cm.Greens]  # Mapas de colores para los dos puntos
+
     n = int(cantidad)
     pos = ["izquierdo", "derecho"]
-    colors = ["blue", "green"]
 
     # Dibujar puntos
     for j in range(len(x)):
+        # Calcular color según el voltaje y el colormap correspondiente
+        color = colormaps[j % len(colormaps)](norm(abs(volts[j])))
+
         # Verificar si los puntos están dentro de los límites
         if abs(x[j]) > ancho_mitad:
             messagebox.showwarning("Advertencia", f"El punto ({x[j]}, {y[j]}) excede el rango horizontal ({-ancho_mitad}, {ancho_mitad}).")
         elif n == 1:
             if len(x) == 1:
-                ax.plot(x[j], y[j], 'o', color=colors[j], label=f"Conductor")
+                ax.plot(x[j], y[j], 'o', color=color, label=f"Conductor")
             else:
-                ax.plot(x[j], y[j], 'o', color=colors[j], label=f"Conductor {pos[j]}")
+                ax.plot(x[j], y[j], 'o', color=color, label=f"Conductor {pos[j]}")
         elif n >= 2:
             radio = ((separacion / 100) / 2) * (1 / math.sin(math.pi / n))
             puntos = generar_poligono(n, radio, x[j], y[j])
             for i in range(len(puntos)):
-                ax.plot(puntos[i][0], puntos[i][1], 'o', color=colors[j], label=f"Conductor {pos[j]}" if i == 0 else None)
+                ax.plot(puntos[i][0], puntos[i][1], 'o', color=color, label=f"Conductor {pos[j]}" if i == 0 else None)
 
     # Agregar leyenda
     ax.legend(loc="upper right")
 
+    # Agregar barras de colores personalizadas
+    for j in range(len(volts)):
+        cmap = colormaps[j % len(colormaps)]  # Seleccionar el colormap correspondiente
+        ticks = [0, 400, 800, 1200] if volts[j] >= 0 else [0, -400, -800, -1200]
+        cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, location="right", pad=0.1)
+        cbar.set_label(f"Voltaje {pos[j]} (V)", rotation=270, labelpad=15)
+        cbar.set_ticks([abs(t) for t in ticks])  # Posiciones basadas en valores absolutos
+        cbar.ax.set_yticklabels([str(t) for t in ticks])  # Etiquetas reflejan el signo del voltaje
+    # Ajustar el layout para evitar solapamientos
+    fig.tight_layout()
+    # Cambiar el tamaño de la figura
+    fig.set_size_inches(6, 5)  # Cambiar el tamaño de la figura a 12x8 pulgadas (puedes ajustar estos valores)
+    # Ajustar tamaño de la ventana en Tkinter
+    ventana.geometry("1300x1100")  # Cambiar el tamaño de la ventana a 1300x900 píxeles
     # Mostrar gráfico en la interfaz
     global canvas
     if canvas is not None:
         canvas.get_tk_widget().destroy()  # Destruir el canvas anterior
-
     # Crear y mostrar el nuevo canvas
     canvas = FigureCanvasTkAgg(fig, ventana)  # Crear nuevo canvas
     canvas.get_tk_widget().place(x=650, y=20)  # Mostrar el nuevo gráfico
+
 
 
 
@@ -629,27 +877,89 @@ def generar_poligono(n_lados, radio, centro_x=0, centro_y=0):
             lista_puntos.append((x, y))
     return lista_puntos
 
-estado_guardado = False
+def verificar_estado_area():
+    # Actualizar el estado de la variable global estado_area
+    # También actuliza los estados de area1 y area2
+    global estado_area
+    #namei == "Área (mm²)"
+    error = verificar_selecciones()
+    if error:
+        mostrar_error(error) # mostrará tanto los errores para el conductor 1  y el 2
+        return error
+    tipo = tipo_conductor.get()
+    nombre_con = nombre_conductor.get()
+    # Obtener los valores del diccionario
+    datos_conductor = next(
+        (x[1:] for x in opciones_subcon[tipo] if x[0] == nombre_con), None
+    )
+    if datos_conductor:
+        # Crear o actualizar el área en el diccionario `entradas`
+        entradas["Área (mm²)"] = [tipo, nombre_con, list(datos_conductor)]
+    else:
+        mostrar_error("Error al buscar los datos del conductor seleccionado.")
+        return
+    if boton_bipolar_var.get():
+        name = "Área 2 (mm²)"
+        tipo2 = tipo_conductor2.get()
+        nombre_con2 = nombre_conductor2.get()
+        # Obtener los valores del diccionario
+        datos_conductor2 = next(
+            (x[1:] for x in opciones_subcon[tipo2] if x[0] == nombre_con2), None
+        )
+        if datos_conductor2:
+            # Crear o actualizar el área en el diccionario `entradas`
+            entradas["Área 2 (mm²)"] = [tipo2, nombre_con2, list(datos_conductor2)]
+            area2 = list(datos_conductor2)[0]
+            print(f"Entradas actualizadas: {entradas}")
+        else:
+            mostrar_error("Error al buscar los datos del conductor 2 seleccionado.")
+            return
+    estado_area = True
+
 
 def guardar_datos():
     global estado_guardado  # Referencia la variable global
-    
+    advertencia = verificar_estado_area()  # Verificar el estado del área antes de guardar
     # Alternar entre True y False
-    if estado_guardado:
-        estado_guardado = False
-        messagebox.showinfo("Datos no guardados", "No se guardaran los datos una vez ejecutado el programa")
+    if advertencia:
+        return
     else:
-        datos = {nombre: entrada.get() for nombre, entrada in entradas.items() if isinstance(entrada, ttk.Entry)}
-        messagebox.showinfo("Datos guardados", f"Datos capturados:\n{datos}")
-        estado_guardado = True
-
-
+        if estado_guardado:
+            estado_guardado = False
+            messagebox.showinfo("Datos no guardados", "No se guardarán los datos una vez ejecutado el programa")
+        else:
+            # Crear un diccionario con los valores capturados
+            datos = {}
+            for nombre, entrada in entradas.items():
+                if isinstance(entrada, ttk.Entry):  # Si es un Entry, capturamos el valor con .get()
+                    datos[nombre] = entrada.get()
+                elif isinstance(entrada, (tuple, list)):  # Si es una tupla o lista, verificamos sus elementos
+                    valores = []
+                    for item in entrada:
+                        if hasattr(item, "get"):  # Si tiene el método get, lo usamos para capturar el valor
+                            valores.append(item.get())
+                        else:
+                            valores.append(item)  # De lo contrario, añadimos el valor directamente
+                    datos[nombre] = type(entrada)(valores)  # Usamos el tipo original (tuple o list)
+                else:
+                    datos[nombre] = entrada  # Capturamos valores directos para otros tipos
+            
+            # Mostrar los datos capturados
+            messagebox.showinfo("Datos guardados", f"Datos capturados:\n{datos}")
+            estado_guardado = True
 
 
 def limpiar_campos():
     for entrada in entradas.values():
-        entrada.delete(0, tk.END)
+        # Verificar si es una lista o tupla
+        if isinstance(entrada, (list, tuple)):
+            for sub_entrada in entrada:
+                sub_entrada.delete(0, tk.END)
+        else:
+            # Si no es una lista o tupla, simplemente limpiar el campo
+            entrada.delete(0, tk.END)
     entrada_separacion.config(state="disabled")  # Desactivar separación al limpiar
+
 
 def verificar_separacion(*args):
     try:
@@ -687,6 +997,7 @@ def validar_natural(texto, nombre):
     else:
         messagebox.showwarning("Valor inválido", f"La casilla '{nombre}' solo acepta números naturales (1, 2, 3...).")
         return False
+    
 def validar_uno(texto, nombre):
     """Valida que el texto ingresado sea un número real entre 0 y 1."""
     if texto == "":  # Permitir casillas vacías mientras el usuario escribe
@@ -719,22 +1030,132 @@ def cerrar_programa():
 # Crear la ventana principal
 ventana = tk.Tk()
 ventana.title("Ajuste de parámetros")
-ventana.geometry("1200x700")
+ventana.geometry("1300x700") # ajuste tamaño ventana completa
 
 # Diccionario con explicaciones de los parámetros
 explicaciones = {
     "Voltaje (kV)": "Voltaje aplicado al conductor, medido en kilovoltios (kV).",
-    "Área (mm²)": "Sección transversal del conductor, medida en milímetros cuadrados.",
+    "Área (mm²)": (
+        "Sección transversal del conductor, medida en milímetros cuadrados:\n"
+        "- ACSR: Aluminum Conductor Steel Reinforced:\n"
+        "    Kiwi: área: 1170 mm^2, diámetro: 44.12 mm \n"
+        "    Chukar: área: 976.7 mm^2, diámetro: 40.69 mm \n"
+        "    Falcon: área: 908.7 mm^2, diámetro: 39.24 mm \n"
+        "    Lapwing: área: 859.8 mm^2, diámetro: 38.15 mm \n"
+        "    Plover: área: 818.7 mm^2, diámetro: 37.21 mm \n"
+        "    Pheasant: área: 726.8 mm^2, diámetro: 35.10 mm \n"
+        "    Bunting: área: 647.7 mm^2, diámetro: 33.07 mm \n"
+        "    Curlew: área: 593.6 mm^2, diámetro: 31.65 mm \n"
+        "    Rail: área: 517.3 mm^2, diámetro: 29.59 mm \n"
+        "    Condor: área: 454.5 mm^2, diámetro: 27.76 mm \n"
+        "    Crow: área: 408.5 mm^2, diámetro: 26.28 mm \n"
+        "    Gull: área: 361.0 mm^2, diámetro: 25.38 mm \n"
+        "    Kingbird: área: 341.0 mm^2, diámetro: 23.88 mm \n"
+        "    Osprey: área: 298.2 mm^2, diámetro: 22.33 mm \n"
+        "    Pelican: área: 255.1 mm^2, diámetro: 20.68 mm \n"
+        "    Oriole: área: 210.3 mm^2, diámetro: 18.82 mm \n"
+        "    Ostrich: área: 176.7 mm^2, diámetro: 17.27 mm \n"
+        "    Penguin (4/0): área: 125.1 mm^2, diámetro: 14.30 mm \n"
+        "    Pigeon (3/0): área: 99.2 mm^2, diámetro: 12.75 mm \n"
+        "    Raven (1/0): área: 62.4 mm^2, diámetro: 10.11 mm \n"
+        "    Sparrow: área: 39.2 mm^2, diámetro: 8.03 mm \n"
+        "    Turkey: área: 15.5 mm^2, diámetro: 5.03 mm \n"
+        "\n"
+        "- AAC: All Aluminum Conductor:\n"
+        "    Cowslip: área: 1013 mm^2, diámetro: 41.41 mm \n"
+        "    Jessamine: área: 887 mm^2, diámetro: 38.72 mm \n"
+        "    Carnation: área: 725 mm^2, diámetro: 35.02 mm \n"
+        "    Narcissus: área: 645 mm^2, diámetro: 32.94 mm \n"
+        "    Marigold: área: 564 mm^2, diámetro: 30.88 mm \n"
+        "    Goldenrod: área: 483 mm^2, diámetro: 28.60 mm \n"
+        "    Lilac: área: 403 mm^2, diámetro: 26.11 mm \n"
+        "    Flag: área: 355 mm^2, diámetro: 24.48 mm \n"
+        "    Hyacinth: área: 253 mm^2, diámetro: 20.66 mm \n"
+        "    Canna: área: 202 mm^2, diámetro: 18.38 mm \n"
+        "    Laurel: área: 135 mm^2, diámetro: 15.05 mm \n"
+        "    Oxlip: área: 107 mm^2, diámetro: 13.25 mm \n"
+        "    Poppy: área: 53.7 mm^2, diámetro: 9.36 mm \n"
+        "\n"
+        "- ACAR: Aluminum Conductor Alloy Reinforced:\n"
+        "    ACAR1: área: 1013 mm^2, diámetro: 41.41 mm \n"
+        "    ACAR2: área: 963 mm^2, diámetro: 40.37 mm \n"
+        "    ACAR3: área: 887 mm^2, diámetro: 38.72 mm \n"
+        "    ACAR4: área: 811 mm^2, diámetro: 37.04 mm \n"
+        "    ACAR5: área: 760 mm^2, diámetro: 35.85 mm \n"
+        "    ACAR6: área: 659 mm^2, diámetro: 33.37 mm \n"
+        "    ACAR7: área: 557 mm^2, diámetro: 30.65 mm \n"
+        "    ACAR8: área: 481 mm^2, diámetro: 28.48 mm \n"
+        "    ACAR9: área: 380 mm^2, diámetro: 25.32 mm \n"
+        "    ACAR10: área: 279 mm^2, diámetro: 21.67 mm \n"
+        "    ACAR11: área: 177 mm^2, diámetro: 17.24 mm \n"
+        "    ACAR12: área: 125 mm^2, diámetro: 14.31 mm \n"
+        "    ACAR13: área: 62.5 mm^2, diámetro: 10.11 mm \n"
+    ),
     "Posición en x (m)": "Posición horizontal del conductor 1 en metros.",
     "Posición en y (m)": "Posición vertical del conductor 1 en metros.",
     "Posición en x 2 (m)": "Posición horizontal del conductor 2 en metros.",
     "Posición en y 2 (m)": "Posición vertical del conductor 2 en metros.",
-    "factor conductor": "Factor de rugosidad para las características del conductor.",
-    "factor conductor 2": "Factor de rugosidad para las características del conductor 2.",
+    "Estado sup cond 1": "Estado de superficie para el conductor 1. Factor 'm'.",
+    "Estado sup cond 2": "Estado de superficie para el conductor 2. Factor 'm'.",
     "Subconductores": "Número de subconductores usados en cada polo.",
     "Separación (cm)": "Distancia entre subconductores, medida en centímetros.",
     "Voltaje 2 (kV)": "Voltaje aplicado al conductor secundario en kilovoltios (kV).",
-    "Área 2 (mm²)": "Sección transversal del segundo conductor, medida en milímetros cuadrados.",
+    "Área 2 (mm²)": (
+        "Sección transversal del segundo conductor, medida en milímetros cuadrados:\n"
+        "- ACSR: Aluminum Conductor Steel Reinforced:\n"
+        "    Kiwi: área: 1170 mm^2, diámetro: 44.12 mm \n"
+        "    Chukar: área: 976.7 mm^2, diámetro: 40.69 mm \n"
+        "    Falcon: área: 908.7 mm^2, diámetro: 39.24 mm \n"
+        "    Lapwing: área: 859.8 mm^2, diámetro: 38.15 mm \n"
+        "    Plover: área: 818.7 mm^2, diámetro: 37.21 mm \n"
+        "    Pheasant: área: 726.8 mm^2, diámetro: 35.10 mm \n"
+        "    Bunting: área: 647.7 mm^2, diámetro: 33.07 mm \n"
+        "    Curlew: área: 593.6 mm^2, diámetro: 31.65 mm \n"
+        "    Rail: área: 517.3 mm^2, diámetro: 29.59 mm \n"
+        "    Condor: área: 454.5 mm^2, diámetro: 27.76 mm \n"
+        "    Crow: área: 408.5 mm^2, diámetro: 26.28 mm \n"
+        "    Gull: área: 361.0 mm^2, diámetro: 25.38 mm \n"
+        "    Kingbird: área: 341.0 mm^2, diámetro: 23.88 mm \n"
+        "    Osprey: área: 298.2 mm^2, diámetro: 22.33 mm \n"
+        "    Pelican: área: 255.1 mm^2, diámetro: 20.68 mm \n"
+        "    Oriole: área: 210.3 mm^2, diámetro: 18.82 mm \n"
+        "    Ostrich: área: 176.7 mm^2, diámetro: 17.27 mm \n"
+        "    Penguin (4/0): área: 125.1 mm^2, diámetro: 14.30 mm \n"
+        "    Pigeon (3/0): área: 99.2 mm^2, diámetro: 12.75 mm \n"
+        "    Raven (1/0): área: 62.4 mm^2, diámetro: 10.11 mm \n"
+        "    Sparrow: área: 39.2 mm^2, diámetro: 8.03 mm \n"
+        "    Turkey: área: 15.5 mm^2, diámetro: 5.03 mm \n"
+        "\n"
+        "- AAC: All Aluminum Conductor:\n"
+        "    Cowslip: área: 1013 mm^2, diámetro: 41.41 mm \n"
+        "    Jessamine: área: 887 mm^2, diámetro: 38.72 mm \n"
+        "    Carnation: área: 725 mm^2, diámetro: 35.02 mm \n"
+        "    Narcissus: área: 645 mm^2, diámetro: 32.94 mm \n"
+        "    Marigold: área: 564 mm^2, diámetro: 30.88 mm \n"
+        "    Goldenrod: área: 483 mm^2, diámetro: 28.60 mm \n"
+        "    Lilac: área: 403 mm^2, diámetro: 26.11 mm \n"
+        "    Flag: área: 355 mm^2, diámetro: 24.48 mm \n"
+        "    Hyacinth: área: 253 mm^2, diámetro: 20.66 mm \n"
+        "    Canna: área: 202 mm^2, diámetro: 18.38 mm \n"
+        "    Laurel: área: 135 mm^2, diámetro: 15.05 mm \n"
+        "    Oxlip: área: 107 mm^2, diámetro: 13.25 mm \n"
+        "    Poppy: área: 53.7 mm^2, diámetro: 9.36 mm \n"
+        "\n"
+        "- ACAR: Aluminum Conductor Alloy Reinforced:\n"
+        "    ACAR1: área: 1013 mm^2, diámetro: 41.41 mm \n"
+        "    ACAR2: área: 963 mm^2, diámetro: 40.37 mm \n"
+        "    ACAR3: área: 887 mm^2, diámetro: 38.72 mm \n"
+        "    ACAR4: área: 811 mm^2, diámetro: 37.04 mm \n"
+        "    ACAR5: área: 760 mm^2, diámetro: 35.85 mm \n"
+        "    ACAR6: área: 659 mm^2, diámetro: 33.37 mm \n"
+        "    ACAR7: área: 557 mm^2, diámetro: 30.65 mm \n"
+        "    ACAR8: área: 481 mm^2, diámetro: 28.48 mm \n"
+        "    ACAR9: área: 380 mm^2, diámetro: 25.32 mm \n"
+        "    ACAR10: área: 279 mm^2, diámetro: 21.67 mm \n"
+        "    ACAR11: área: 177 mm^2, diámetro: 17.24 mm \n"
+        "    ACAR12: área: 125 mm^2, diámetro: 14.31 mm \n"
+        "    ACAR13: área: 62.5 mm^2, diámetro: 10.11 mm \n"
+    ),
     "Recombinación (μm^3/s)": "Tasa de recombinación del material, medida en micrómetros cúbicos por segundo.",
     "Jp (nA/m^2)": "Densidad de corriente de polarización, medida en nanoamperios por metro cuadrado.",
     "Movilidad iónica (m2/kVs)": "Movilidad de iones en el sistema.",
@@ -760,18 +1181,18 @@ explicaciones = {
     "Gráficos disponibles": (
         "Seleccionar todo: Selecciona a todos los gráficos  disponibles según sean el caso unipolar o bipolar\n"
         "Gráficos disponibles:\n"
-        "- Eele: Campo electrostático\n"
-        "- Vele: Potencial electrostático\n"
-        "- Rhof: Densidad de carga espacial total\n"
-        "- Vf: Potencial iónico\n"
-        "- SPd: Densidades de carga vista 3D, disponible solamente para la configuración bipolar\n"
-        "- Rhop: Densidad de carga positiva, disponible solamente para configuración bipolar\n"
-        "- Rhon: Densidad de carga negativa, disponible solamente para configuración bipolar\n"
-        "- Vdef: Potencial definitivo\n"
-        "- Ef: Campo definitivo\n"
-        "- J1: Perfil densidad de corriente a nivel de piso\n"
-        "- E1: Perfil magnitud campo eléctrico total a nivel de piso\n"
-        "- SPv: Potenciales vista 3D\n"
+        "- Eele: Campo electrostático (V/m)\n"
+        "- Vele: Potencial electrostático (V)\n"
+        "- Rhof: Densidad de carga espacial total (C/m^3)\n"
+        "- Vf: Potencial iónico (V)\n"
+        "- SPd: Densidades de carga vista 3D, disponible solamente para la configuración bipolar (C/m^3)\n"
+        "- Rhop: Densidad de carga positiva, disponible solamente para configuración bipolar (C/m^3)\n"
+        "- Rhon: Densidad de carga negativa, disponible solamente para configuración bipolar (C/m^3)\n"
+        "- Vdef: Potencial definitivo (V)\n"
+        "- Ef: Campo definitivo (V/m)\n"
+        "- J1: Perfil densidad de corriente a nivel de piso (nA/m^2)\n"
+        "- E1: Perfil magnitud campo eléctrico total a nivel de piso (V/m)\n"
+        "- SPv: Potenciales vista 3D (V)\n"
     ),
     "Ancho (m)": "Semi ancho del entorno en el que se encuentran los conductores.",
     "Altura (m)": "Altura total del entorno en el que se encuentran los conductores.",
@@ -851,14 +1272,14 @@ secciones = {
         ("Área (mm²)", "100"),
         ("Posición en x (m)", "0"),
         ("Posición en y (m)", "5"),
-        ("factor conductor", "1"),
+        ("Estado sup cond 1", "1"),
         ("Subconductores", "1"),
         ("Separación (cm)", "0"),
         ("Voltaje 2 (kV)", "-400"),
         ("Área 2 (mm²)", "100"),
         ("Posición en x 2 (m)", "0"),
         ("Posición en y 2 (m)", "5"),
-        ("factor conductor 2", "1"),
+        ("Estado sup cond 2", "1"),
         ("Recombinación (μm^3/s)", "1.8"),
         ("Jp (nA/m^2)", "1988e-8"),
     ],
@@ -871,12 +1292,80 @@ secciones = {
         ("Viento y (m/s)", "0"),
         ("Modo (str)", "uniforme"),
         ("Rugosidad terreno", "0.2"),
-        ("Interior conductor", "si")
+        ("Interior conductor", "no")
     ]
 }
 
+# Función unificada para actualizar opciones
+def actualizar_nombres(tipo_var, nombre_var, menu):
+    tipo = tipo_var.get()
+    nombres = [x[0] for x in opciones_subcon.get(tipo, [])]
+    nombre_var.set("")  # Resetear la selección
+    menu["values"] = nombres
+
+
 entradas = {}
-opciones_areas = ["50", "70", "95", "120", "150", "185", "240", "300", "400", "500", "630"]  # Áreas en mm²
+# Configuración de las opciones por tipo de conductor
+
+opciones_subcon = {
+    "ACSR": [
+        ("Kiwi", 1170, 44.12),
+        ("Chukar", 976.7, 40.69),
+        ("Falcon", 908.7, 39.24),
+        ("Lapwing", 859.8, 38.15),
+        ("Plover", 818.7, 37.21),
+        ("Pheasant", 726.8, 35.10),
+        ("Bunting", 647.7, 33.07),
+        ("Curlew", 593.6, 31.65),
+        ("Rail", 517.3, 29.59),
+        ("Condor", 454.5, 27.76),
+        ("Crow", 408.5, 26.28),
+        ("Gull", 361.0, 25.38),
+        ("Kingbird", 341.0, 23.88),
+        ("Osprey", 298.2, 22.33),
+        ("Pelican", 255.1, 20.68),
+        ("Oriole", 210.3, 18.82),
+        ("Ostrich", 176.7, 17.27),
+        ("Penguin (4/0)", 125.1, 14.30),
+        ("Pigeon (3/0)", 99.2, 12.75),
+        ("Raven (1/0)", 62.4, 10.11),
+        ("Sparrow", 39.2, 8.03),
+        ("Turkey", 15.5, 5.03)
+    ],
+    "AAC": [
+        ("Cowslip", 1013, 41.41),
+        ("Jessamine", 887, 38.72),
+        ("Carnation", 725, 35.02),
+        ("Narcissus", 645, 32.94),
+        ("Marigold", 564, 30.88),
+        ("Goldenrod", 483, 28.60),
+        ("Lilac", 403, 26.11),
+        ("Flag", 355, 24.48),
+        ("Hyacinth", 253, 20.66),
+        ("Canna", 202, 18.38),
+        ("Laurel", 135, 15.05),
+        ("Oxlip", 107, 13.25),
+        ("Poppy", 53.7, 9.36)
+    ],
+    "ACAR": [
+        ("ACAR1", 1013, 41.41),
+        ("ACAR2", 963, 40.37),
+        ("ACAR3", 887, 38.72),
+        ("ACAR4", 811, 37.04),
+        ("ACAR5", 760, 35.85),
+        ("ACAR6", 659, 33.37),
+        ("ACAR7", 557, 30.65),
+        ("ACAR8", 481, 28.48),
+        ("ACAR9", 380, 25.32),
+        ("ACAR10", 279, 21.67),
+        ("ACAR11", 177, 17.24),
+        ("ACAR12", 125, 14.31),
+        ("ACAR13", 62.5, 10.11)
+    ]
+}
+
+
+#opciones_areas = ["50", "70", "95", "120", "150", "185", "240", "300", "400", "500", "630"]  # Áreas en mm²
 opciones_modo = ["uniforme",  "gradiente"]
 opciones_condct = ["si", "no", "noV"]
 for i, (seccion, campos) in enumerate(secciones.items()):
@@ -907,20 +1396,32 @@ for i, (seccion, campos) in enumerate(secciones.items()):
         # Organizar las casillas en dos columnas
         for j, (nombre, valor_defecto) in enumerate(campos[:7]):
             ttk.Label(marco, text=nombre).grid(row=j, column=0, sticky="w", padx=5, pady=2)
-
-            # Usar Combobox para los campos de área
+            # Extraer las categorías del diccionario
+            categorias = list(opciones_subcon.keys())
+            # Código principal
             if "Área" in nombre:
-                entrada = ttk.Combobox(marco, values=opciones_areas, state="readonly")
-                entrada.set(valor_defecto)  # Valor por defecto
-            else:
-                entrada = ttk.Entry(marco)
-                entrada.insert(0, valor_defecto)
+                tipo_conductor = tk.StringVar()
+                menu_tipo = ttk.Combobox(marco, textvariable=tipo_conductor, state="readonly", width=7)
+                menu_tipo["values"] = list(opciones_subcon.keys())
+                menu_tipo.grid(row=j, column=1, padx=5, pady=2)
+                menu_tipo.bind("<<ComboboxSelected>>", lambda e: actualizar_nombres(tipo_conductor, nombre_conductor, menu_nombre))
 
-            entrada.grid(row=j, column=1, padx=5, pady=2)
-            entradas[nombre] = entrada
+                nombre_conductor = tk.StringVar()
+                menu_nombre = ttk.Combobox(marco,textvariable=nombre_conductor, state="readonly", width=7)
+                menu_nombre.grid(row=j, column=2, padx=5, pady=2)
+                entradas[nombre] = []
+            # Crear Entry para otros campos
+            else:
+                entrada = ttk.Entry(marco, width=9)
+                entrada.insert(0, valor_defecto)
+                entrada.grid(row=j, column=1, padx=5, pady=2)
+                entradas[nombre] = entrada
             # Botón de ayuda
-            boton_ayuda = ttk.Button(marco, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
-            boton_ayuda.grid(row=j, column=2, padx=2, pady=1)
+            boton_ayuda = ttk.Button(marco, text="?", width=2, command=lambda p=nombre: mostrar_explicacion(p))
+            if j==1:
+                boton_ayuda.grid(row=j, column=3, padx=2, pady=1)
+            else:
+                boton_ayuda.grid(row=j, column=2, padx=2, pady=1)
             # Aplicar fuente personalizada al botón
             boton_ayuda.configure(style="Ayuda.TButton")
             # Crear un estilo para el botón
@@ -932,21 +1433,34 @@ for i, (seccion, campos) in enumerate(secciones.items()):
 
         # Las casillas adicionales en la segunda columna
         for j, (nombre, valor_defecto) in enumerate(campos[7:], start=0):
-            ttk.Label(marco, text=nombre).grid(row=j, column=3, sticky="w", padx=5, pady=2)
-
-            # Usar Combobox para los campos de área
+            ttk.Label(marco, text=nombre).grid(row=j, column=4, sticky="w", padx=5, pady=2)
+            categorias2 = list(opciones_subcon.keys())
+            # Crear Combobox para "Área"
             if "Área" in nombre:
-                entrada = ttk.Combobox(marco, values=opciones_areas, state="readonly")
-                entrada.set(valor_defecto)  # Valor por defecto
-            else:
-                entrada = ttk.Entry(marco)
-                entrada.insert(0, valor_defecto)
+                ################
+                tipo_conductor2 = tk.StringVar()
+                menu_tipo2 = ttk.Combobox(marco, textvariable=tipo_conductor2, state="disabled", width=7)
+                menu_tipo2["values"] = list(opciones_subcon.keys())
+                menu_tipo2.grid(row=j, column=5, padx=5, pady=2)
+                menu_tipo2.bind("<<ComboboxSelected>>", lambda e: actualizar_nombres(tipo_conductor2, nombre_conductor2, menu_nombre2))
 
-            entrada.grid(row=j, column=4, padx=5, pady=2)
-            entradas[nombre] = entrada
+                nombre_conductor2 = tk.StringVar()
+                menu_nombre2 = ttk.Combobox(marco, textvariable=nombre_conductor2, state="disabled", width=7)
+                menu_nombre2.grid(row=j, column=6, padx=5, pady=2)
+                entradas[nombre] = []
+                ################
+            # Crear Entry para otros campos
+            else:
+                entrada = ttk.Entry(marco, width=9)
+                entrada.insert(0, valor_defecto)
+                entrada.grid(row=j, column=5, padx=5, pady=2)
+                entradas[nombre] = entrada
             # Botón de ayuda
             boton_ayuda = ttk.Button(marco, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
-            boton_ayuda.grid(row=j, column=5, padx=2, pady=1)
+            if j==1:
+                boton_ayuda.grid(row=j, column=7, padx=2, pady=1)
+            else:
+                boton_ayuda.grid(row=j, column=6, padx=2, pady=1)
             # Aplicar fuente personalizada al botón
             boton_ayuda.configure(style="Ayuda.TButton")
             # Crear un estilo para el botón
@@ -997,7 +1511,7 @@ for j, (nombre, valor_defecto) in enumerate(secciones["Características ambienta
         entrada = ttk.Combobox(marco_ambientales, values=opciones_modo, state="readonly")
         entrada.set(valor_defecto)  # Valor por defecto
     elif "Interior" in nombre:
-        entrada = ttk.Combobox(marco_ambientales, values=opciones_condct, state="readonly")
+        entrada = ttk.Combobox(marco_ambientales, values=opciones_condct, state="disabled")
         entrada.set(valor_defecto)  # Valor por defecto
     else:
         entrada = ttk.Entry(marco_ambientales)
@@ -1074,6 +1588,7 @@ for i, (nombre, valor_defecto) in enumerate(campos_iteraciones):
     entrada.insert(0, valor_defecto)
     entrada.grid(row=i + 1, column=1, padx=5, pady=2)
     entradas[nombre] = entrada
+    entrada.config(state="disabled")
     # Botón de ayuda
     boton_ayuda = ttk.Button(marco_iteracion, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
     boton_ayuda.grid(row=i+1, column=2, padx=2, pady=1)
@@ -1102,8 +1617,8 @@ entrada_cantidad.config(validate="key", validatecommand=(validacion_natural, "%P
 entradas["Max iter rho"].config(validate="key", validatecommand=(validacion_natural, "%P", "Max iter rho"))
 entradas["Max iter V"].config(validate="key", validatecommand=(validacion_natural, "%P", "Max iter V"))
 entradas["Max iter Gob"].config(validate="key", validatecommand=(validacion_natural, "%P", "Max iter Gob"))
-entradas["factor conductor"].config(validate="key", validatecommand=(validacion_uno, "%P", "factor conductor"))
-entradas["factor conductor 2"].config(validate="key", validatecommand=(validacion_uno, "%P", "factor conductor 2"))
+entradas["Estado sup cond 1"].config(validate="key", validatecommand=(validacion_uno, "%P", "Estado sup cond 1"))
+entradas["Estado sup cond 2"].config(validate="key", validatecommand=(validacion_uno, "%P", "Estado sup cond 2"))
 
 entrada_cantidad.bind("<KeyRelease>", verificar_separacion)  # Asociar el evento de escritura
 entrada_separacion.config(state="disabled")  # Desactivada inicialmente
@@ -1155,20 +1670,28 @@ def alternar_estado_boton(boton):
         boton.configure(style="BotonSeleccionado.TButton")  # Cambia al estilo seleccionado
         estado_botones[boton] = True
 
-# Crear los botones con la función `marcar_boton` en sus comandos
+# Crear los botones
 marco_botones = ttk.Frame(ventana, padding=10)
 marco_botones.grid(row=len(secciones) + 1, column=0, columnspan=3, sticky="w", padx=10, pady=5)
-boton_guardar = ttk.Button(marco_botones, text="Guardar", command=lambda: [guardar_datos(), alternar_estado_boton(boton_guardar)])
+
+# Definir ancho uniforme
+ancho_botones = 7  # Ajusta este valor según tus necesidades
+
+# Crear los botones y definir su ancho
+boton_guardar = ttk.Button(marco_botones, text="Guardar", command=lambda: [guardar_datos(), alternar_estado_boton(boton_guardar)], width=ancho_botones)
 boton_guardar.grid(row=0, column=0, padx=5)
-boton_limpiar = ttk.Button(marco_botones, text="Limpiar", command=limpiar_campos)
+boton_limpiar = ttk.Button(marco_botones, text="Limpiar", command=limpiar_campos, width=ancho_botones)
 boton_limpiar.grid(row=0, column=1, padx=5)
-boton_graficar = ttk.Button(marco_botones, text="Graficar", command=validar_campos_y_graficar)
+boton_graficar = ttk.Button(marco_botones, text="Graficar", command=validar_campos_y_graficar, width=ancho_botones)
 boton_graficar.grid(row=0, column=2, padx=5)
-boton_ejecutar = ttk.Button(marco_botones, text="Ejecutar", command=validar_campos_y_ejecutar)
+boton_ejecutar = ttk.Button(marco_botones, text="Ejecutar", command=validar_campos_y_ejecutar, width=ancho_botones)
 boton_ejecutar.grid(row=0, column=3, padx=5)
-boton_salir = ttk.Button(marco_botones, text="Salir", command=cerrar_programa)
+boton_salir = ttk.Button(marco_botones, text="Salir", command=cerrar_programa, width=ancho_botones)
 boton_salir.grid(row=0, column=4, padx=5)
+
+# Protocolo de cierre
 ventana.protocol("WM_DELETE_WINDOW", cerrar_programa)
+
 
 
 # Crear el botón Bipolar inmediatamente a la derecha
@@ -1181,20 +1704,16 @@ boton_auto_red_var = tk.BooleanVar()  # Variable para controlar el estado del bo
 boton_auto_red = ttk.Checkbutton(marco_botones, text="Auto red", variable=boton_auto_red_var, command=activar_auto_red)
 boton_auto_red.grid(row=0, column=6, padx=5, pady=10)  # Ubicado justo al lado del Bipolar
 
+# Añadir un nuevo botón "Desarrollador" inmediatamente a la derecha de autored
+boton_desarrollador_var = tk.BooleanVar()  # Variable para controlar el estado del botón
+boton_desarrollador = ttk.Checkbutton(marco_botones, text="Desarrollador", variable=boton_desarrollador_var, command=activar_desarrollador)
+boton_desarrollador.grid(row=0, column=7, padx=5, pady=10)  # Ubicado justo al lado del Bipolar
+
 
 # Botones de gráficos
 marco_contenedor = tk.Frame(ventana)
 marco_contenedor.grid(row=len(secciones) + 3, column=0, columnspan=2, padx=10, pady=5)
-'''
-# Título destacado
-titulo = ttk.Label(
-    marco_contenedor,
-    text="Gráficos",
-    background="lightblue",
-    font=("Arial", 9, "bold")
-)
-titulo.grid(row=0, column=0, sticky="w", padx=5, pady=(0, 5))
-'''
+
 # Marco decorado
 marco_graficos = tk.Frame(
     marco_contenedor,

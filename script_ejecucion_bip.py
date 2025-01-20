@@ -491,8 +491,9 @@ if __name__ == "__main__":
             for i, (pos, Evv, Vco, Vo) in enumerate(zip(posicion_cond, Evvs, Vcos, Vos)):
                 posy, posx = pos
                 if bundle:
+                    print("Hay conductores fasciculados")
                     Evv *= ajustar_gradiente(Vo, Vco)
-
+                    print(f"El nuevo gradiente superficial depende de {Vo/1000} kV y es {Evv/(10**5)} kV/cm")
                 # Campo eléctrico en el conductor
                 E_magnitud = np.sqrt(Ex**2 + Ey**2)
                 factores = {
@@ -1312,18 +1313,24 @@ if __name__ == "__main__":
 
             # Preparar los datos extra para cada hoja
             datos_conductores = {
+                "Tipo": [tipo1],
+                "Nombre": [nombre1],
                 "Área (mm²)": [area1],
+                "Diámetro (mm)": [diametro1],
                 "Subconductores": [cantidad],
                 "Separación (cm)": [sep],
                 "Voltaje (kV)": [Vol1/1000],
                 "Posición en x (m)": [x_coor1],
                 "Posición en y (m)": [y_coor1],
-                "factor conductor": [m1],
-                "Área 2(mm²)": [area2],
+                "Estado sup cond": [m1],
+                "Tipo 2": [tipo2],
+                "Nombre 2": [nombre2],
+                "Área 2 (mm²)": [area2],
+                "Diámetro 2 (mm)": [diametro2],
                 "Voltaje 2(kV)": [Vol2/1000],
                 "Posición en x 2(m)": [x_coor2],
                 "Posición en y 2(m)": [y_coor2],
-                "factor conductor 2": [m2],
+                "Estado sup cond 2": [m2],
                 "Radio equivalente 1 (cm)": [Req1],
                 "Radio equivalente 2 (cm)": [Req2],
                 "Gradiente superficial crítico izq (kV/cm)": Evv1,
@@ -1423,8 +1430,14 @@ if __name__ == "__main__":
     print("COMIENZO DEL PROGRAMA")
     print("########################")
     # Extraer parámetros necesarios
-    area1 = float(params["Área (mm²)"])
-    area2 = float(params["Área 2 (mm²)"])
+    #area1 = float(params["Área (mm²)"])
+    #area2 = float(params["Área 2 (mm²)"])
+    tipo1, nombre1, areas1 = params["Área (mm²)"]
+    diametro1 = float(areas1[1])
+    area1 =float(areas1[0])
+    tipo2, nombre2, areas2 = params["Área 2 (mm²)"]
+    diametro2 = float(areas2[1])
+    area2 =float(areas2[0])
     cantidad = int(params["Subconductores"])
     sep = float(params["Separación (cm)"])
     is_bundled = False
@@ -1457,8 +1470,8 @@ if __name__ == "__main__":
     viento_y = float(params["Viento y (m/s)"])
     modo = str(params["Modo (str)"])
     rug =  float(params["Rugosidad terreno"])
-    m1 = float(params["factor conductor"])
-    m2 = float(params["factor conductor 2"])
+    m1 = float(params["Estado sup cond 1"])
+    m2 = float(params["Estado sup cond 2"])
     m = [m1, m2]
     l = float(params["Medición (m)"])
     gra = params["graficos"]
@@ -1468,7 +1481,7 @@ if __name__ == "__main__":
     print(str(sep))
     Req1, R1 = calculo_radio_eq(cantidad, area1, sep, conversion=conversion, es_mcm=es_mcm, es_cm=es_cm) # están en cm
     Req2, R2 = calculo_radio_eq(cantidad, area2, sep, conversion=conversion, es_mcm=es_mcm, es_cm=es_cm) # están en cm
-    print(f"radio eq {Req1} y radio subconductor {R1}")
+    print(f"radio eq {Req1} y radio subconductor {R1} en cm")
     Req = np.min([Req1, Req2])
     R = np.array([Req1, Req2])
     Req /= 100 # en m
@@ -1491,10 +1504,10 @@ if __name__ == "__main__":
     g0 = 29.8 # kV/cm
     Evv1 = grad_sup(g0, m1, delta, Req1*100) # kV/cm
     Evv2 = grad_sup(g0, m2, delta, Req2*100) # kV/cm
-    Evvs = [Evv1, Evv2]
+    Evvs = [Evv1*10**5, Evv2*10**5] # V/m
     evv1 = Vol_crit(Evv1, y_coor1*100, Req*100) # kV
     evv2 = Vol_crit(Evv2, y_coor2*100, Req*100) # kV
-    Vcos = [evv1, evv2]
+    Vcos = [evv1*1000, evv2*1000] # V
     print(f"potencial critico corona polo  positivo es {evv1} kV y gradiente superficial critico es {Evv1} kV/cm")
     print(f"potencial critico corona polo  negativo es {evv2} kV y gradiente superficial critico es {Evv2} kV/cm")
     fi = 30 # número de la ventana donde se muestra la evolución de la diferencia promedio y la desviación
