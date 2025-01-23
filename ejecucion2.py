@@ -10,6 +10,7 @@ import math as ma
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 import math
+from PIL import Image, ImageTk  # Importar Pillow para manejar imágenes
 
 plt.close('all')
 
@@ -48,7 +49,54 @@ def alternar_grafico(nombre, mostrar_mensaje=True):
         messagebox.showinfo(nombre, f"Se ha {mensaje} {nombre}.")
     
     # Imprimir el estado actual de la lista (opcional)
-    print(f"Gráficos seleccionados: {graficos}")
+    #(f"Gráficos seleccionados: {graficos}")
+
+def simetrico():
+    # Verificar si los campos asociados al primer conductor no están vacíos
+    '''
+    if not (tipo_conductor.get() and nombre_conductor.get() and entradas["Posición en x (m)"].get() and 
+            entradas["Posición en y (m)"].get() and 
+            entradas["Voltaje (kV)"].get() and 
+            entradas["Estado sup cond 1"].get()):
+        # Si alguno de los campos está vacío, mostrar un error y salir
+        #messagebox.showerror("Error", "Todos los parámetros del primer conductor deben estar llenos antes de continuar.")
+        print("Todos los parámetros del primer conductor deben estar llenos antes de continuar.")
+        return
+    '''
+    # Obtener los valores del primer conductor
+    posx = float(entradas["Posición en x (m)"].get())
+    posy = float(entradas["Posición en y (m)"].get())
+    Vol = float(entradas["Voltaje (kV)"].get())
+    me = float(entradas["Estado sup cond 1"].get())
+    tipo = tipo_conductor.get()  # Obtener tipo del primer conductor
+    nombre_con = nombre_conductor.get()  # Obtener nombre del primer conductor
+
+    # Limpiar las casillas del conductor 2 antes de copiar los valores
+    entradas["Posición en x 2 (m)"].delete(0, "end")
+    entradas["Posición en y 2 (m)"].delete(0, "end")
+    entradas["Voltaje 2 (kV)"].delete(0, "end")
+    entradas["Estado sup cond 2"].delete(0, "end")
+    
+    # Limpiar los comboboxes del conductor 2
+    tipo_conductor2.set('')  # Limpiar el valor del combobox tipo
+    nombre_conductor2.set('')  # Limpiar el valor del combobox nombre
+
+    # Activar los campos del segundo conductor
+    menu_tipo2.configure(state="normal")
+    menu_nombre2.configure(state="normal")
+    
+    # Copiar los valores del primer conductor al segundo
+    tipo_conductor2.set(tipo)  # Establecer el tipo del conductor 2 igual al del conductor 1
+    nombre_conductor2.set(nombre_con)  # Establecer el nombre del conductor 2 igual al del conductor 1
+    
+    entradas["Posición en x 2 (m)"].insert(0, -posx)  # Insertar el valor en el campo del conductor 2
+    entradas["Posición en y 2 (m)"].insert(0, posy)  # Insertar el valor en el campo del conductor 2
+    entradas["Voltaje 2 (kV)"].insert(0, -Vol)  # Insertar el valor en el campo del conductor 2 (voltaje con signo negativo)
+    entradas["Estado sup cond 2"].insert(0, me)  # Insertar el estado del conductor 2
+
+
+
+
 
 def Hay_corona(Vol, Ev, ev):
     '''
@@ -57,10 +105,10 @@ def Hay_corona(Vol, Ev, ev):
     r: en cm
     '''
     if ev <= np.abs(Vol):
-        print(f"{Vol} kV >= {ev} kV, hay efecto corona")
+        #print(f"{Vol} kV >= {ev} kV, hay efecto corona")
         return True
     else:
-        print(f"{Vol} kV < {ev} kV, no hay efecto corona")
+        #print(f"{Vol} kV < {ev} kV, no hay efecto corona")
         return False
     
 def grad_sup(g0, m, delta, r):
@@ -68,7 +116,7 @@ def grad_sup(g0, m, delta, r):
     return  Ev
 
 def Vol_crit(Ev, Sep, r):
-    print(f"los parametros para Vol_crit son", Ev, Sep, r)
+    #print(f"los parametros para Vol_crit son", Ev, Sep, r)
     ev = Ev*r*np.log(Sep/r)
     return ev
 
@@ -222,34 +270,57 @@ def malla(ancho, Sx, Sy, nodox = None, nodoy = None):
     return x, y, nodox, nodoy
 
 def verificar_discretizacion(min, sx, sy, nodox, nodoy, x_coor, y_coor):
-    print(f"tipo sx,sy son {type(sx)}, {type(sy)}")
-    if (sx is None and sy is None) and (nodox is not None and nodoy is not None):
-        Sx, Sy = espacio(min, min, nodox, nodoy)
-        x, y, nodosx, nodosy = malla(min, Sx, Sy, nodox=nodox, nodoy=nodoy)
-        # Calcular las diferencias y nodos adicionales necesarios
-        distx = np.abs(x_coor) - Sx
-        disty = np.abs(y_coor) - Sy
-        nodos_sx = max(int(distx / min) + 1, 0)
-        nodos_sy = max(int(disty / min) + 1, 0)
-        # Inicializar un mensaje vacío
-        mensajes_error = []
-        # Verificar condiciones de dimensionamiento
-        if distx > 0:
-            mensajes_error.append(
-                f"Error de dimensionamiento en X. Si quieres usar {nodox} nodos en el eje horizontal entonces aumenta el radio equivalente o selecciona más nodos: {nodos_sx + nodosx}, "
-                f"o bien reduce la distancia x_coor. Diferencia x-sx: {distx:.2f} metros.")
-        if disty > 0:
-            mensajes_error.append(
-                f"Error de dimensionamiento en Y. Si quieres usar {nodoy} nodos en el eje vertical entonces aumenta el radio equivalente o selecciona más nodos: {2 * (nodos_sy + nodosy)}, "
-                f"o bien reduce la distancia y_coor. Diferencia y-sy: {disty:.2f} metros.")
-        # Mostrar mensajes de error si hay problemas
-        if mensajes_error:
-            messagebox.showinfo(
-                "Verificación dimensionamiento", "\n".join(mensajes_error))
-            return False
-        # Si no hay problemas, retornar True
-        return True
+    mensajes_error = []
+    if not boton_desarrollador_var.get():
+        '''
+        entradas["nodos x"].config(state="normal")
+        entradas["nodos x"].delete(0, "end")
+        entradas["nodos y"].config(state="normal")
+        entradas["nodos y"].delete(0, "end")
+        '''
+        if sx is not None and sy is not None and nodox is None and nodoy is None:
+            distx, disty = np.abs(x_coor) - sx, np.abs(y_coor) - sy
+            if distx > 0:
+                mensajes_error.append(
+                    f"Bajo dimensionamiento en X: Sx < x_coor ({sx} < {np.abs(x_coor)}), usa Sx = {2 * np.abs(x_coor)}.")
+            if disty > 0:
+                mensajes_error.append(
+                    f"Bajo dimensionamiento en Y: Sy < y_coor ({sy} < {np.abs(y_coor)}), usa Sy = {2 * np.abs(y_coor)}.")
+    else:
+        # Caso 1: sx y sy son None, pero nodox y nodoy están definidos
+        if sx is None and sy is None and nodox is not None and nodoy is not None:
+            Sx, Sy = espacio(min, min, nodox, nodoy)
+            _, _, nodosx, nodosy = malla(min, Sx, Sy, nodox=nodox, nodoy=nodoy)
+            
+            # Calcular diferencias y nodos adicionales
+            distx, disty = np.abs(x_coor) - Sx, np.abs(y_coor) - Sy
+            nodos_sx = max(int(distx / min) + 1, 0)
+            nodos_sy = max(int(disty / min) + 1, 0)
+            
+            if distx > 0:
+                mensajes_error.append(
+                    f"Error en X: aumenta nodos a {nodos_sx + nodosx} o reduce x_coor (diferencia: {distx:.2f} m).")
+            if disty > 0:
+                mensajes_error.append(
+                    f"Error en Y: aumenta nodos a {2 * (nodos_sy + nodosy)} o reduce y_coor (diferencia: {disty:.2f} m).")
+    
+        # Caso 2: sx y sy están definidos, pero nodox y nodoy son None
+        elif sx is not None and sy is not None and nodox is None and nodoy is None:
+            distx, disty = np.abs(x_coor) - sx, np.abs(y_coor) - sy
+            if distx > 0:
+                mensajes_error.append(
+                    f"Bajo dimensionamiento en X: Sx < x_coor ({sx} < {np.abs(x_coor)}), usa Sx = {2 * np.abs(x_coor)}.")
+            if disty > 0:
+                mensajes_error.append(
+                    f"Bajo dimensionamiento en Y: Sy < y_coor ({sy} < {np.abs(y_coor)}), usa Sy = {2 * np.abs(y_coor)}.")
+    
+    # Mostrar mensajes de error si los hay
+    if mensajes_error:
+        messagebox.showinfo("Verificación de dimensionamiento", "\n".join(mensajes_error))
+        return False
+    
     return True
+
 
 # Botón Bipolar para activar/desactivar las casillas extra
 def activar_bipolar():
@@ -258,12 +329,17 @@ def activar_bipolar():
         menu_tipo2.configure(state="normal")
         menu_nombre2.configure(state="normal")
         entradas["Voltaje 2 (kV)"].config(state="normal")
-        #entradas["Área 2 (mm²)"].config(state="normal")
+       
         entradas["Posición en x 2 (m)"].config(state="normal")
         entradas["Posición en y 2 (m)"].config(state="normal")
         entradas["Estado sup cond 2"].config(state="normal")
-        entradas["Movilidad iónica 2 (m2/kVs)"].config(state="normal")
-        entradas["Recombinación (μm^3/s)"].config(state="normal")
+        if boton_desarrollador_var.get():
+            entradas["Movilidad iónica 2 (m2/kVs)"].config(state="normal")
+            entradas["Recombinación (μm^3/s)"].config(state="normal")
+        else:
+            entradas["Movilidad iónica 2 (m2/kVs)"].config(state="disabled")
+            entradas["Recombinación (μm^3/s)"].config(state="disabled")
+            simetrico()
         entradas["Jp (nA/m^2)"].config(state="disabled")
         # Verifica si alguna casilla está activada
         boton_Spd.config(state=tk.NORMAL)
@@ -274,13 +350,16 @@ def activar_bipolar():
         menu_nombre2.configure(state="disabled")
         # Eliminar el contenido actual de las casillas
         entradas["Voltaje 2 (kV)"].config(state="disabled")
-        #entradas["Área 2 (mm²)"].config(state="disabled")
+        
         entradas["Posición en x 2 (m)"].config(state="disabled")
         entradas["Posición en y 2 (m)"].config(state="disabled")
         entradas["Estado sup cond 2"].config(state="disabled")
         entradas["Movilidad iónica 2 (m2/kVs)"].config(state="disabled")
         entradas["Recombinación (μm^3/s)"].config(state="disabled")
-        entradas["Jp (nA/m^2)"].config(state="normal")
+        if boton_desarrollador_var.get():
+            entradas["Jp (nA/m^2)"].config(state="normal")
+        else:
+            entradas["Jp (nA/m^2)"].config(state="disabled")
 
         boton_Spd.config(state=tk.DISABLED)
         boton_Rhop.config(state=tk.DISABLED)
@@ -293,36 +372,65 @@ def activar_bipolar():
 
 def activar_desarrollador():
     if boton_desarrollador_var.get():
+        boton_auto_red.config(state="normal")
         entradas["Max iter rho"].config(state="normal")
         entradas["Max iter V"].config(state="normal")
         entradas["Max iter Gob"].config(state="normal")
         entradas["Interior conductor"].config(state="normal")
+        entradas["Movilidad iónica (m2/kVs)"].config(state="normal")
+        if boton_bipolar_var.get():
+            entradas["Movilidad iónica 2 (m2/kVs)"].config(state="normal")
+            entradas["Recombinación (μm^3/s)"].config(state="normal")
+        else:
+            entradas["Movilidad iónica 2 (m2/kVs)"].config(state="disabled")
+            entradas["Recombinación (μm^3/s)"].config(state="disabled")
+        entradas["Rugosidad terreno"].config(state="normal")
+        entradas["nodos x"].config(state="normal")
+        entradas["nodos x"].delete(0, "end")  # Limpia el campo
+        entradas["nodos x"].insert(0, "200")  # Inserta "Nuevo valor" al inicio
+        entradas["nodos y"].config(state="normal")
+        entradas["nodos y"].delete(0, "end")  # Limpia el campo
+        entradas["nodos y"].insert(0, "200")  # Inserta "Nuevo valor" al inicio
+        entradas["Jp (nA/m^2)"].config(state="normal")
+        entradas["iteraciones rho"]=True
     else:
+        boton_auto_red.config(state="disabled")
         entradas["Max iter rho"].config(state="disabled")
         entradas["Max iter V"].config(state="disabled")
         entradas["Max iter Gob"].config(state="disabled")
         entradas["Interior conductor"].config(state="disabled")
+        entradas["Movilidad iónica (m2/kVs)"].config(state="disabled")
+        entradas["Movilidad iónica 2 (m2/kVs)"].config(state="disabled")
+        entradas["Rugosidad terreno"].config(state="disabled")
+        entradas["nodos x"].delete(0, "end")  # Limpiar contenido
+        entradas["nodos x"].config(state="disabled")
+        entradas["nodos y"].delete(0, "end")  # Limpiar contenido
+        entradas["nodos y"].config(state="disabled")
+        entradas["Jp (nA/m^2)"].config(state="disabled")
+        entradas["Recombinación (μm^3/s)"].config(state="disabled")
+        entradas["iteraciones rho"]=False
 
 def activar_auto_red():
     """Controla el estado de las casillas según el botón 'Auto red'."""
-    if boton_auto_red_var.get():
-        # Habilitar todas las casillas temporalmente para permitir la selección
-        for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
-            entradas[entrada].config(state="normal")
+    if boton_desarrollador_var.get():
+        if boton_auto_red_var.get():
+            # Habilitar todas las casillas temporalmente para permitir la selección
+            for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
+                entradas[entrada].config(state="normal")
 
-        # Vincular eventos para detectar el primer grupo que se edite
-        entradas["Ancho (m)"].bind("<FocusIn>", lambda e: habilitar_grupo("dimensiones"))
-        entradas["Altura (m)"].bind("<FocusIn>", lambda e: habilitar_grupo("dimensiones"))
-        entradas["nodos x"].bind("<FocusIn>", lambda e: habilitar_grupo("nodos"))
-        entradas["nodos y"].bind("<FocusIn>", lambda e: habilitar_grupo("nodos"))
-    else:
-        for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
-            entradas[entrada].config(state="normal")
-        # Restablecer los valores y habilitar todas las casillas
-        restablecer_valores()
-        # Desvincular eventos
-        for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
-            entradas[entrada].unbind("<FocusIn>")
+            # Vincular eventos para detectar el primer grupo que se edite
+            entradas["Ancho (m)"].bind("<FocusIn>", lambda e: habilitar_grupo("dimensiones"))
+            entradas["Altura (m)"].bind("<FocusIn>", lambda e: habilitar_grupo("dimensiones"))
+            entradas["nodos x"].bind("<FocusIn>", lambda e: habilitar_grupo("nodos"))
+            entradas["nodos y"].bind("<FocusIn>", lambda e: habilitar_grupo("nodos"))
+        else:
+            for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
+                entradas[entrada].config(state="normal")
+            # Restablecer los valores y habilitar todas las casillas
+            restablecer_valores()
+            # Desvincular eventos
+            for entrada in ["Ancho (m)", "Altura (m)", "nodos x", "nodos y"]:
+                entradas[entrada].unbind("<FocusIn>")
 
 def habilitar_grupo(grupo):
     """Habilitar un grupo y deshabilitar el opuesto después de la interacción del usuario."""
@@ -418,10 +526,10 @@ def ejecutar_script():
 
 def process_area(area, cantidad, sep):
     Req, R = calculo_radio_eq(cantidad, area, sep, conversion=0.5067, es_mcm=False, es_cm=True) # están en cm
-    print(f"radio eq {Req} cm y radio subconductor {R} cm")
+   # print(f"radio eq {Req} cm y radio subconductor {R} cm")
     Req /= 100 # en m
     R /= 100
-    print(f'{Req},{R} en metros')
+    #print(f'{Req},{R} en metros')
     return Req, R # devuelve en metros
 
 def verificar_selecciones():
@@ -442,11 +550,11 @@ def extrae_radios(cantidad, sepa):
     # devuelve [R1, 10**10] si unipolar
     # devuelve [R1, R2] si bipolar
     radios = []
-    area1 = entradas["Área (mm²)"][2][0]
+    area1 = entradas["Conductor"][2][0]
     Req, R = process_area(area1, cantidad, sepa) # en metros
     radios.append(Req)
     if boton_bipolar_var.get():
-        area2 = entradas["Área 2 (mm²)"][2][0]
+        area2 = entradas["Conductor 2"][2][0]
         Req2, R2 = process_area(area2, cantidad, sepa)
         radios.append(Req2)
     else:
@@ -459,18 +567,23 @@ def validar_campos_y_ejecutar():
     cantidad = entrada_cantidad.get()
     try:
         cantidad = int(cantidad)
-        print(f"cantidad de subconductores es {cantidad}")
+        #print(f"cantidad de subconductores es {cantidad}")
     except ValueError:
         cantidad = 0
         mostrar_error("La cantidad de subconductores debe ser un número entero.")
         return
     sx = obtener_parametro(entradas["Ancho (m)"].get(), float)  # (m) Media longitud del plano de tierra
     sy = obtener_parametro(entradas["Altura (m)"].get(), float)  # (m) Altura del área de estudio respecto de tierra
-    nodox = obtener_parametro(entradas["nodos x"].get(), int)  # Número de nodos en x
-    nodoy = obtener_parametro(entradas["nodos y"].get(), int)  # Número de nodos en y
+    entradas["nodos x"].config(state="normal")  # Cambiar a estado normal
+    entradas["nodos y"].config(state="normal")  # Cambiar a estado normal
+    nodox = obtener_parametro(entradas["nodos x"].get(), int)  # Leer el valor
+    nodoy = obtener_parametro(entradas["nodos y"].get(), int)  # Leer el valor
+    if not boton_desarrollador_var.get():
+        entradas["nodos x"].config(state="disabled")  # Restaurar el estado deshabilitado}
+        entradas["nodos y"].config(state="disabled")  # Restaurar el estado deshabilitado
     try:
         sep = float(entradas["Separación (cm)"].get())
-        print(f"la separación es {sep}")
+        #print(f"la separación es {sep}")
     except:
         messagebox.showwarning("Advertencia", "La separación debe ser un número.")
         return
@@ -489,6 +602,8 @@ def validar_campos_y_ejecutar():
         elif nombre == "Altura (m)":
             #sy = entradas[nombre].get()
             continue
+        elif nombre == "iteraciones rho": # solo para determinar la cantidad de iteraciones
+            continue
         elif nombre == "nodos x":
             #nodox = entradas[nombre].get()
             continue  # Ignorar esta casilla
@@ -503,14 +618,18 @@ def validar_campos_y_ejecutar():
                     "Advertencia", "En modo Bipolar, los conductores no pueden estar en la misma posición"
                 )
                 return
-        elif nombre == "Onset corona (kV)":
+        elif nombre == "Onset corona 1 (kV)":
             continue
-        elif nombre == "Corona gradient (kV/cm)":
+        elif nombre == "Corona gradient 1 (kV/cm)":
+            continue
+        elif nombre == "Onset corona 2 (kV)":
+            continue
+        elif nombre == "Corona gradient 2 (kV/cm)":
             continue
         elif nombre == "Posición en y (m)":
             y1 = float(entradas[nombre].get())
         
-        elif nombre == "Área (mm²)":
+        elif nombre == "Conductor":
             if estado_area:
                 radios = extrae_radios(cantidad, sep)
             else:
@@ -518,11 +637,12 @@ def validar_campos_y_ejecutar():
                 radios = extrae_radios(cantidad, sep)
             estado_area = False
             continue
-        elif nombre == "Área 2 (mm²)":
+        elif nombre == "Conductor 2":
             continue
         else:
+            #print(f"elnombre es {nombre}")
             valor = entradas[nombre].get().strip()  # Obtener valor sin espacios adicionales
-        print(f"el valor de {nombre} es {valor}")
+        #print(f"el valor de {nombre} es {valor}")
         # Validar campo vacío
         if not valor:
             messagebox.showwarning("Advertencia", f"No pueden haber casillas vacías (revisar: {nombre}).")
@@ -574,30 +694,13 @@ def validar_campos_y_ejecutar():
             except ValueError:
                 messagebox.showwarning("Advertencia", f"El valor de {campo} debe ser un número válido o estar vacío.")
                 return
-    print(f"los radios son {radios}")
-    print(f"el sx y sy son {sx} y {sy}")
-    print(f"el nodox y nodoy son {nodox} y {nodoy}")
+    #print(f"los radios son {radios}")
+    #print(f"el sx y sy son {sx} y {sy}")
+    #print(f"el nodox y nodoy son {nodox} y {nodoy}")
     verificado = verificar_discretizacion(np.min(radios), sx, sy, nodox, nodoy, x1, y1)
     if not verificado:
         return
     messagebox.showinfo("Validación exitosa", "Todos los campos han sido completados correctamente.")
-    '''
-    Vol1 = entradas["Voltaje (kV)"].get() # kV
-    m1 = entradas["Estado sup cond 1"].get()
-    Vol2 = entradas["Voltaje 2 (kV)"].get() # kV
-    m2 = entradas["Estado sup cond 2"].get()
-    delta = param_corona()
-    Von1, Egrad1 = calcula_corona(sep, radios[0], delta, m1, g0) # Se crean los elementos Ev, ev en el diccionarios
-    Von2, Egrad2 = calcula_corona(sep, radios[1], delta, m2, g0) 
-    corona1 = Hay_corona(Vol1, Egrad1, Von1)
-    corona2 = Hay_corona(Vol2, Egrad2, Von2)
-    if corona1 or corona2:
-        messagebox.showinfo("Advertencia", f"Se verifica que si hay efecto corona en los conductores.\n"
-                            f"Voltaje aplicado {Vol} kV >= Voltaje crítico {Von} kV y gradiente superficial {Egrad} kV/cm")
-    else:
-        messagebox.showinfo("Advertencia", "Se verifica que no hay efecto corona en los conductores.\n"
-                            f"Voltaje aplicado {Vol} kV < Voltaje crítico {Von} kV y gradiente superficial {Egrad} kV/cm")
-    '''
     y1 = float(entradas["Posición en y (m)"].get())
     if boton_bipolar_var.get():
         y2 = float(entradas["Posición en y 2 (m)"].get())
@@ -606,20 +709,26 @@ def validar_campos_y_ejecutar():
     alturas = np.array([y1, y2])
     verificar_corona(alturas*100, np.array(radios)*100) # en centimetros el radio
     
-    ejecutar_script()
+    #ejecutar_script()
 
 
-def verificar_corona(alturas, radios):
+def verificar_corona(alturas, radios, hay_fasciculos=False):
     # Obtener valores desde el diccionario `entradas`
     Vol1 = float(entradas["Voltaje (kV)"].get())  # kV
     m1 = float(entradas["Estado sup cond 1"].get())
-    print(f"el radio1 es {radios[0]}")
-    print(f"el radio2 es {radios[1]}")
+    #print(f"el radio1 es {radios[0]}")
+    #print(f"el radio2 es {radios[1]}")
+    #print(f"la altura1 es {alturas[0]}")
     delta = param_corona()
-    
+    s = float(entradas["Separación (cm)"].get())
+    if s > 0:
+        print(f"la separacion de los subconductores es {s}")
+        hay_fasciculos = True
+
     # Calcular para el primer conductor
-    Von1, Egrad1 = calcula_corona(alturas[0], radios[0], delta, m1, g0)
+    Von1, Egrad1 = calcula_corona(alturas[0], radios[0], delta, m1, g0, Vol1, num='1', fasciculado=hay_fasciculos)
     corona1 = Hay_corona(Vol1, Egrad1, Von1)
+    #print(f"Eg1 es  {Egrad1}")
     
     # Detalles del efecto corona
     detalles = f"Conductor 1:\n"
@@ -632,28 +741,45 @@ def verificar_corona(alturas, radios):
     
     # Verificar si se deben calcular los valores para el segundo conductor
     if boton_bipolar_var.get():
+        #print(f"la altura2 es {alturas[1]}")
         Vol2 = float(entradas["Voltaje 2 (kV)"].get())  # kV
         m2 = float(entradas["Estado sup cond 2"].get())
         
         # Calcular para el segundo conductor
-        Von2, Egrad2 = calcula_corona(alturas[1], radios[1], delta, m2, g0)
+        Von2, Egrad2 = calcula_corona(alturas[1], radios[1], delta, m2, g0, Vol2, num='2', fasciculado=hay_fasciculos)
         corona2 = Hay_corona(Vol2, Egrad2, Von2)
-        
+        #print(f"Eg2 es  {Egrad2}")
         detalles += f"Conductor 2:\n"
         if corona2:
-            detalles += (f"Voltaje aplicado: {Vol2} kV >= Voltaje crítico: {Von2:.2f} kV\n"
+            detalles += (f"Voltaje aplicado: {np.abs(Vol2)} kV >= Voltaje crítico: {Von2:.2f} kV\n"
                          f"Gradiente superficial: {Egrad2:.2f} kV/cm\n\n")
         else:
-            detalles += (f"Voltaje aplicado: {Vol2} kV < Voltaje crítico: {Von2:.2f} kV\n"
+            detalles += (f"Voltaje aplicado: {np.abs(Vol2)} kV < Voltaje crítico: {Von2:.2f} kV\n"
                          f"Gradiente superficial: {Egrad2:.2f} kV/cm\n\n")
     else:
         detalles += "El cálculo para el conductor 2 no fue realizado.\n"
     
     # Mostrar el mensaje de advertencia
     if corona1 or (boton_bipolar_var.get() and corona2):
-        messagebox.showinfo("Advertencia", f"Se verifica que sí hay efecto corona en los conductores.\n\n{detalles}")
+        continuar = messagebox.askyesno(
+            "Advertencia",
+            f"Se verifica que sí hay efecto corona en los conductores.\n\n{detalles}"
+            "\n¿Desea continuar con la ejecución?"
+        )
     else:
-        messagebox.showinfo("Advertencia", f"Se verifica que no hay efecto corona en los conductores.\n\n{detalles}")
+        continuar = messagebox.askyesno(
+            "Advertencia",
+            f"Se verifica que no hay efecto corona en los conductores.\n\n{detalles}"
+            "\n¿Desea continuar con la ejecución?"
+        )
+    
+    # Ejecutar la función si el usuario elige continuar
+    if continuar:
+        #verificar_corona(np.array(alturas) * 100, np.array(radios) * 100)  # En centímetros
+        ejecutar_script()
+    else:
+        messagebox.showinfo("Configuración", "Por favor, configure otro modelo antes de continuar.")
+
 
 
 P0 = 101.3  # kPa
@@ -666,9 +792,11 @@ def param_corona():
     delta = Pres * T0 / (P0 * Tem)  # Densidad del aire
     return delta
     
+def ajustar_gradiente(vol, vol_co):
+        # Se ocupa solo cuando son conductores fasciculados
+        return 1.1339 - 0.1678 * (vol / vol_co) + 0.03 * (vol / vol_co)**2
 
-
-def calcula_corona(Sep, r, delta, m, g0):
+def calcula_corona(Sep, r, delta, m, g0, vol, num='1', fasciculado=False):
     '''
     Vol en kV
     Sep en cm
@@ -677,8 +805,10 @@ def calcula_corona(Sep, r, delta, m, g0):
     '''
     Ev= grad_sup(g0, m, delta, r)
     ev = Vol_crit(Ev, Sep, r)
-    entradas["Onset corona (kV)"] = ev
-    entradas["Corona gradient (kV/cm)"] = Ev
+    if fasciculado:
+       Ev *=ajustar_gradiente(np.abs(vol), ev)
+    entradas[f"Onset corona {num} (kV)"] = ev
+    entradas[f"Corona gradient {num} (kV/cm)"] = Ev
     return ev, Ev
 
 # Inicialización global de canvas
@@ -765,7 +895,7 @@ def validar_campos_y_graficar():
         if cantidad > 1:
             separacion = float(entrada_separacion.get())
             if separacion <= 0:
-                raise ValueError("La separación debe ser mayor que 0.")
+                raise ValueError("La separación de los subconductores debe ser mayor que 0.")
         else:
             separacion = 0
 
@@ -831,7 +961,7 @@ def graficar_puntos(fig, ax, x, y, cantidad, separacion, ancho_mitad, altura_tot
         cmap = colormaps[j % len(colormaps)]  # Seleccionar el colormap correspondiente
         ticks = [0, 400, 800, 1200] if volts[j] >= 0 else [0, -400, -800, -1200]
         cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, location="right", pad=0.1)
-        cbar.set_label(f"Voltaje {pos[j]} (V)", rotation=270, labelpad=15)
+        cbar.set_label(f"Voltaje {pos[j]} (kV)", rotation=270, labelpad=15)
         cbar.set_ticks([abs(t) for t in ticks])  # Posiciones basadas en valores absolutos
         cbar.ax.set_yticklabels([str(t) for t in ticks])  # Etiquetas reflejan el signo del voltaje
     # Ajustar el layout para evitar solapamientos
@@ -881,7 +1011,7 @@ def verificar_estado_area():
     # Actualizar el estado de la variable global estado_area
     # También actuliza los estados de area1 y area2
     global estado_area
-    #namei == "Área (mm²)"
+    
     error = verificar_selecciones()
     if error:
         mostrar_error(error) # mostrará tanto los errores para el conductor 1  y el 2
@@ -894,12 +1024,12 @@ def verificar_estado_area():
     )
     if datos_conductor:
         # Crear o actualizar el área en el diccionario `entradas`
-        entradas["Área (mm²)"] = [tipo, nombre_con, list(datos_conductor)]
+        entradas["Conductor"] = [tipo, nombre_con, list(datos_conductor)]
     else:
         mostrar_error("Error al buscar los datos del conductor seleccionado.")
         return
     if boton_bipolar_var.get():
-        name = "Área 2 (mm²)"
+        name = "Conductor 2"
         tipo2 = tipo_conductor2.get()
         nombre_con2 = nombre_conductor2.get()
         # Obtener los valores del diccionario
@@ -908,9 +1038,9 @@ def verificar_estado_area():
         )
         if datos_conductor2:
             # Crear o actualizar el área en el diccionario `entradas`
-            entradas["Área 2 (mm²)"] = [tipo2, nombre_con2, list(datos_conductor2)]
+            entradas["Conductor 2"] = [tipo2, nombre_con2, list(datos_conductor2)]
             area2 = list(datos_conductor2)[0]
-            print(f"Entradas actualizadas: {entradas}")
+            #print(f"Entradas actualizadas: {entradas}")
         else:
             mostrar_error("Error al buscar los datos del conductor 2 seleccionado.")
             return
@@ -978,7 +1108,7 @@ def verificar_separacion(*args):
 def verificar_modo_viento(*args):
     try:
         modo = str(entrada_modo.get())
-        if modo == "gradiente":
+        if modo == "gradiente" and boton_desarrollador_var.get():
             entrada_rugosidad_terreno.config(state="normal")
         else:
             entrada_rugosidad_terreno.delete(0, tk.END)
@@ -1035,7 +1165,7 @@ ventana.geometry("1300x700") # ajuste tamaño ventana completa
 # Diccionario con explicaciones de los parámetros
 explicaciones = {
     "Voltaje (kV)": "Voltaje aplicado al conductor, medido en kilovoltios (kV).",
-    "Área (mm²)": (
+    "Conductor": (
         "Sección transversal del conductor, medida en milímetros cuadrados:\n"
         "- ACSR: Aluminum Conductor Steel Reinforced:\n"
         "    Kiwi: área: 1170 mm^2, diámetro: 44.12 mm \n"
@@ -1100,7 +1230,7 @@ explicaciones = {
     "Subconductores": "Número de subconductores usados en cada polo.",
     "Separación (cm)": "Distancia entre subconductores, medida en centímetros.",
     "Voltaje 2 (kV)": "Voltaje aplicado al conductor secundario en kilovoltios (kV).",
-    "Área 2 (mm²)": (
+    "Conductor 2": (
         "Sección transversal del segundo conductor, medida en milímetros cuadrados:\n"
         "- ACSR: Aluminum Conductor Steel Reinforced:\n"
         "    Kiwi: área: 1170 mm^2, diámetro: 44.12 mm \n"
@@ -1160,7 +1290,7 @@ explicaciones = {
     "Jp (nA/m^2)": "Densidad de corriente de polarización, medida en nanoamperios por metro cuadrado.",
     "Movilidad iónica (m2/kVs)": "Movilidad de iones en el sistema.",
     "Temperatura (°C)": "Temperatura ambiente en grados Celsius.",
-    "Altitud (m)": "Altitud por sobre el nivel del mar (m)",
+    "Altitud (m.s.n.m)": "Altitud en metros por sobre nivel del mar (m.s.n.m.)",
     "Viento x (m/s)": "Componente horizontal de la velocidad del viento.",
     "Viento y (m/s)": "Componente vertical de la velocidad del viento.",
     "Modo (str)": (
@@ -1207,6 +1337,18 @@ explicaciones = {
 # Configurar una fuente más pequeña para el botón
 fuente_boton = ("Arial", 6, "bold")  # Tamaño 6 para reducir altura
 # Función para mostrar una ventana emergente con la explicación
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+def windDist(wndx, hr, y, alpha, uni='uniforme'):
+    # Input: wndx: valocidad media en x, wndy: velocidad media en y, hr: altura de referencia
+    # y: Matriz de alturas, alpha: coeficiente de rugosidad del piso
+    if uni=='gradiente':
+        Wx = wndx*(y/hr)**alpha
+    elif uni=='uniforme':
+        Wx = wndx*np.ones_like(y)
+    return Wx
+
 def mostrar_explicacion(parametro):
     if parametro in explicaciones:
         # Crear una ventana emergente
@@ -1223,9 +1365,7 @@ def mostrar_explicacion(parametro):
         canvas.pack(side="left", fill="both", expand=True)
 
         # Barra de desplazamiento vertical
-        barra_desplazamiento = ttk.Scrollbar(
-            marco, orient="vertical", command=canvas.yview
-        )
+        barra_desplazamiento = ttk.Scrollbar(marco, orient="vertical", command=canvas.yview)
         barra_desplazamiento.pack(side="right", fill="y")
 
         # Conectar el Canvas con la barra de desplazamiento
@@ -1245,6 +1385,40 @@ def mostrar_explicacion(parametro):
             pady=10
         )
         texto.pack(fill="both", expand=True)
+        # Si el parámetro es "Modo (str)", agregar el gráfico
+        if parametro == "Modo (str)":
+            try:
+                y_lim  = float(entradas["Altura (m)"].get())
+                wnx = float(entradas["Viento x (m/s)"].get())
+                wny = float(entradas["Viento y (m/s)"].get())
+                h = float(entradas["Medición (m)"].get())
+                alpha = float(entradas["Rugosidad terreno"].get())
+                if not y_lim:
+                    y_lim = 10
+                if wnx == 0:
+                    wnx = 3
+                if h == 0:
+                    h = 1
+                # Crear un gráfico de ejemplo con Matplotlib
+                y = np.linspace(0, y_lim, 60)
+                wuni = windDist(wnx, h, y, alpha)
+                wgrad = windDist(wnx, h, y, alpha, uni = 'gradiente')
+                fig, ax = plt.subplots(figsize=(5, 4))  # Tamaño de la figura
+                ax.plot(y, wuni, label="Modo 'uniforme'")  # Ejemplo de gráfico
+                ax.plot(y, wgrad, label=f"Modo 'gradiente', alpha={alpha}, y0 = {h}")  # Ejemplo de gráfico
+                ax.set_title(f'Gráfico de Modo (str)')
+                ax.set_xlabel('Altura (m)')
+                ax.set_ylabel('Velocidad horizontal viento (m/s)')
+                ax.grid(True)
+                ax.legend()
+
+                # Incrustar el gráfico de Matplotlib en Tkinter
+                canvas_grafico = FigureCanvasTkAgg(fig, master=marco_contenido)  # Crear el canvas para el gráfico
+                canvas_grafico.draw()  # Dibuja el gráfico
+                canvas_grafico.get_tk_widget().pack()  # Agrega el gráfico al widget Tkinter
+
+            except Exception as e:
+                print(f"Error al generar el gráfico: {e}")
 
         # Ajustar el área visible del Canvas al tamaño del contenido
         marco_contenido.update_idletasks()
@@ -1263,20 +1437,21 @@ def mostrar_explicacion(parametro):
         boton_cerrar.pack(pady=20)  # Centrado automáticamente al usar .pack()
 
 
+
        
 
 # Contenedores principales
 secciones = {
     "Características de los conductores": [
         ("Voltaje (kV)", "400"),
-        ("Área (mm²)", "100"),
+        ("Conductor", "100"),
         ("Posición en x (m)", "0"),
         ("Posición en y (m)", "5"),
         ("Estado sup cond 1", "1"),
         ("Subconductores", "1"),
         ("Separación (cm)", "0"),
         ("Voltaje 2 (kV)", "-400"),
-        ("Área 2 (mm²)", "100"),
+        ("Conductor 2", "100"),
         ("Posición en x 2 (m)", "0"),
         ("Posición en y 2 (m)", "5"),
         ("Estado sup cond 2", "1"),
@@ -1305,6 +1480,8 @@ def actualizar_nombres(tipo_var, nombre_var, menu):
 
 
 entradas = {}
+
+entradas["iteraciones rho"]=False
 # Configuración de las opciones por tipo de conductor
 
 opciones_subcon = {
@@ -1399,7 +1576,7 @@ for i, (seccion, campos) in enumerate(secciones.items()):
             # Extraer las categorías del diccionario
             categorias = list(opciones_subcon.keys())
             # Código principal
-            if "Área" in nombre:
+            if "Conductor" in nombre:
                 tipo_conductor = tk.StringVar()
                 menu_tipo = ttk.Combobox(marco, textvariable=tipo_conductor, state="readonly", width=7)
                 menu_tipo["values"] = list(opciones_subcon.keys())
@@ -1436,7 +1613,7 @@ for i, (seccion, campos) in enumerate(secciones.items()):
             ttk.Label(marco, text=nombre).grid(row=j, column=4, sticky="w", padx=5, pady=2)
             categorias2 = list(opciones_subcon.keys())
             # Crear Combobox para "Área"
-            if "Área" in nombre:
+            if "Conductor" in nombre:
                 ################
                 tipo_conductor2 = tk.StringVar()
                 menu_tipo2 = ttk.Combobox(marco, textvariable=tipo_conductor2, state="disabled", width=7)
@@ -1455,6 +1632,8 @@ for i, (seccion, campos) in enumerate(secciones.items()):
                 entrada.insert(0, valor_defecto)
                 entrada.grid(row=j, column=5, padx=5, pady=2)
                 entradas[nombre] = entrada
+                if nombre == "Jp (nA/m^2)":
+                    entradas[nombre].config(state="disabled")
             # Botón de ayuda
             boton_ayuda = ttk.Button(marco, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
             if j==1:
@@ -1518,6 +1697,8 @@ for j, (nombre, valor_defecto) in enumerate(secciones["Características ambienta
         entrada.insert(0, valor_defecto)
     entrada.grid(row=j + 1, column=1, padx=5, pady=2)
     entradas[nombre] = entrada
+    if nombre in ["Movilidad iónica (m2/kVs)", "Movilidad iónica (m2/kVs)"]:
+        entradas[nombre].config(state="disabled")
     boton_ayuda = ttk.Button(marco_ambientales, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
     boton_ayuda.grid(row=j+1, column=2, padx=2, pady=1)
     # Aplicar fuente personalizada al botón
@@ -1557,6 +1738,9 @@ for i, (nombre, valor_defecto) in enumerate(campos_dimensionamiento):
     entrada.insert(0, valor_defecto)
     entrada.grid(row=i + 1, column=1, padx=5, pady=2)
     entradas[nombre] = entrada
+    if nombre in ["nodos x", "nodos y"]:
+        entradas[nombre].delete(0, "end")
+        entradas[nombre].config(state="disabled")
     # Botón de ayuda
     boton_ayuda = ttk.Button(marco_dimensionamiento, text="?", width=2,command=lambda p=nombre: mostrar_explicacion(p))
     boton_ayuda.grid(row=i+1, column=2, padx=2, pady=1)
@@ -1578,7 +1762,7 @@ marco_iteracion.grid(row=1, column=0, padx=5, pady=(2, 0), sticky="w")  # Reduce
 ttk.Label(marco_iteracion, text="Iteraciones", background="lightcoral", font=fuente_titulo).grid(row=0, column=0, columnspan=2, sticky="w")
 
 campos_iteraciones = [
-    ("Max iter rho", "400"),
+    ("Max iter rho", "500"),
     ("Max iter V", "230"),
     ("Max iter Gob", "10")
 ]
@@ -1703,6 +1887,7 @@ boton_bipolar.grid(row=0, column=5, padx=5, pady=10)  # Ubicado justo después d
 boton_auto_red_var = tk.BooleanVar()  # Variable para controlar el estado del botón
 boton_auto_red = ttk.Checkbutton(marco_botones, text="Auto red", variable=boton_auto_red_var, command=activar_auto_red)
 boton_auto_red.grid(row=0, column=6, padx=5, pady=10)  # Ubicado justo al lado del Bipolar
+boton_auto_red.config(state="disabled")
 
 # Añadir un nuevo botón "Desarrollador" inmediatamente a la derecha de autored
 boton_desarrollador_var = tk.BooleanVar()  # Variable para controlar el estado del botón
@@ -1769,7 +1954,7 @@ for i, grafico in enumerate(estados_graficos):
 # Iniciar la aplicación
 inicializar_grafico()
 ventana.mainloop()
-
+plt.close("all")
 
 
 

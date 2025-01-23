@@ -166,6 +166,8 @@ if __name__ == "__main__":
             assert np.abs(y_coor1) < Sy, f'bajo dimensionamiento, utiliza un radio mayor, o selecciona más nodos: {nodos_sy+nodosy}, o bien ubica a menor distancia y_coor, la dif x-Sx es {disty}'
         elif (sx is not None and sy is not None) and (nodox is None and nodoy is None):
             Sx, Sy = sx, sy
+            assert np.abs(x_coor1) < Sx, f'Bajo dimensionamiento, Sx < coordenada x {Sx}<{np.abs(x_coor1)}, utilice Sx = {2*np.abs(x_coor1)}.'
+            assert np.abs(y_coor1) < Sy, f'Bajo dimensionamiento, Sy < coordenada y {Sy}<{np.abs(y_coor1)}, utilice Sy = {2*np.abs(y_coor1)}.'
             x, y, nodosx, nodosy = malla(min, Sx, Sy, nodox=None, nodoy=None)
         elif (sx is not None and sy is not None) and (nodox is not None and nodoy is not None):
             Sx, Sy = sx, sy
@@ -311,7 +313,7 @@ if __name__ == "__main__":
     
 
 
-    def Hay_corona(Vol, Sep, r, delta, m, g0):
+    def Hay_corona(Vol, Sep, r, delta, m, g0, fasciculo=False):
         '''
         Vol: en kV
         Sep: en cm
@@ -319,11 +321,15 @@ if __name__ == "__main__":
         '''
         Ev= grad_sup(g0, m, delta, r)
         ev = Vol_crit(Ev, Sep, r)
+        if fasciculo:
+            Ev *= ajustar_gradiente(np.abs(Vol), ev)
         if ev <= np.abs(Vol):
             print(f"{np.abs(Vol)} kV >= {ev} kV, hay efecto corona")
+            print(f"Gradiente critico es {Ev} kV/cm")
             return True
         else:
             print(f"{np.abs(Vol)} kV < {ev} kV, no hay efecto corona")
+            print(f"Gradiente critico es {Ev} kV/cm")
             return False
         
     def grad_sup(g0, m, delta, r):
@@ -354,6 +360,7 @@ if __name__ == "__main__":
         rho_in: Condición de borde para el conductor negativo
         '''
         # Imprimir valores de entrada
+        '''
         print(f"Ey: {Ey}")
         print(f"D: {D}")
         print(f"ep0: {ep0}")
@@ -361,6 +368,7 @@ if __name__ == "__main__":
         print(f"V: {V}")
         print(f"Ecrit_p: {Ecrit_p}, Ecrit_s: {Ecrit_s}")
         print(f"R: {R}")
+        '''
 
         # Cálculos
         rho_ip = Ey * 8 * ep0 * V0_p * (np.abs(V[0]) - V0_p) / (Ecrit_p * R[0] * D * np.abs(V[0]) * (5 - 4 * V0_p / np.abs(V[0])))
@@ -399,6 +407,9 @@ if __name__ == "__main__":
                 # Calcular el potencial eléctrico en cada nodo de la malla
                 #Vm += carga[z] * 0.5 * K*(1/Mod_coor - 1/Mod_coor2)
                 Vm += carga[z]*K*(np.log(20/Mod_coor) - np.log(20/Mod_coor2))
+                # Se asegura que las condiciones de borde se mantengan
+                Vm[py,px] = f_value[z]
+                Vm = impone_BC(Vm, Vm, f_value[z], px, py, in_condct=st, copia=copiado)
                 #Vm = calcular_potencial_con_borde_vectorizado(Exx, Eyy,dx, dy)
         else:
             c1 = np.cosh(np.pi*(X-2*ind*Sx)/(2*(Sy)))
@@ -429,27 +440,6 @@ if __name__ == "__main__":
 
 
     ## Ocupa el negativo del gradiente del potencial calculado
-    '''
-    def calcular_campo_electrico(V, dx, dy):
-        # Inicializar las matrices para los componentes del campo eléctrico
-        Ex = np.zeros_like(V)
-        Ey = np.zeros_like(V)
-        
-        # Calcular las derivadas centrales (excepto en los bordes)
-        Ey[1:-1, :] = (V[2:, :] - V[:-2, :]) / (2 * dy)
-        Ex[:, 1:-1] = -(V[:, 2:] - V[:, :-2]) / (2 * dx)
-        
-        # Bordes: Aproximaciones hacia adelante y hacia atrás
-        Ey[0, :] = (V[1, :] - V[0, :]) / dy  # Borde superior
-        Ey[-1, :] = (V[-1, :] - V[-2, :]) / dy  # Borde inferior
-        Ex[:, 0] = -(V[:, 1] - V[:, 0]) / dx  # Borde izquierdo
-        Ex[:, -1] = -(V[:, -1] - V[:, -2]) / dx  # Borde derecho
-        
-        # Calcular el módulo del campo eléctrico en cada punto
-        E_magnitud = np.sqrt(Ex**2 + Ey**2)
-        
-        return Ex, Ey, E_magnitud
-    '''
     def ajustar_gradiente(vol, vol_co):
         # Se ocupa solo cuando son conductores fasciculados
         return 1.1339 - 0.1678 * (vol / vol_co) + 0.03 * (vol / vol_co)**2
@@ -492,7 +482,7 @@ if __name__ == "__main__":
                 posy, posx = pos
                 if bundle:
                     print("Hay conductores fasciculados")
-                    Evv *= ajustar_gradiente(Vo, Vco)
+                    Evv *= ajustar_gradiente(np.abs(Vo), Vco)
                     print(f"El nuevo gradiente superficial depende de {Vo/1000} kV y es {Evv/(10**5)} kV/cm")
                 # Campo eléctrico en el conductor
                 E_magnitud = np.sqrt(Ex**2 + Ey**2)
@@ -510,7 +500,7 @@ if __name__ == "__main__":
         E_magnitud = np.sqrt(Ex**2 + Ey**2)
         return Ex, Ey, E_magnitud
 
-
+    
     def convergencia(rho_actual, rho_anterior, tol):
         # Calcula la diferencia absoluta
         diferencia_absoluta = np.abs(rho_actual - rho_anterior)
@@ -519,45 +509,49 @@ if __name__ == "__main__":
         # Verifica si la diferencia máxima es menor a la tolerancia
         condicion = max_diferencia < tol
         return condicion, max_diferencia
-
-    # Función para verificar si los valores tienen una tendencia horizontal
-    def verificar_convergencia(valores, ventana=110, umbral_variacion=6e-7):
+    '''
+    def convergencia(rho_actual, rho_anterior, tol):
         """
-        Detecta si los valores oscilan en torno a un eje horizontal y si la variación es mínima.
-        
+        Calcula la convergencia utilizando diferencias relativas nodo a nodo
+        y determina la norma infinita para comparar con la tolerancia.
+
         Parámetros:
-            valores (list): Lista de valores.
-            ventana (int): Número de valores recientes para evaluar el promedio.
-            umbral_variacion (float): Umbral de variación aceptable entre promedios consecutivos.
-            
-        Retorna:
-            bool: True si los valores han alcanzado una tendencia horizontal constante, False si no.
-            float: Promedio actual de los últimos valores (None si no se cumplen las condiciones).
-            float: Variación actual entre el último valor y el promedio actual (None si no se cumplen las condiciones).
-        """
-        if len(valores) < ventana:
-            return None, None, None  # No se puede evaluar sin suficientes valores
-        # Obtener los últimos 'ventana' valores
-        valores_recientes = np.array(valores[-ventana:])
-        promedio_actual = np.mean(valores_recientes)
-        # Obtener el último valor
-        ultimo_valor = valores[-1]
-        # Calcular la variación actual (diferencia entre el último valor y el promedio actual)
-        variacion_actual = np.abs(ultimo_valor - promedio_actual)
-        # Inicializar dev_i con un valor por defecto
-        dev_i = None
-        # Comparar con la variación anterior (si existe)
-        if hasattr(verificar_convergencia, 'ultima_variacion'):
-            variacion_anterior = verificar_convergencia.ultima_variacion
-            # Si la diferencia entre las dos variaciones es menor que el umbral, se considera convergencia
-            dev_i = np.abs(variacion_actual - variacion_anterior)
-            if dev_i < umbral_variacion:
-                return True, promedio_actual, dev_i
-        # Guardar la variación actual para la próxima iteración
-        verificar_convergencia.ultima_variacion = variacion_actual
-        return False, promedio_actual, dev_i
+            rho_actual (np.ndarray): Malla actual.
+            rho_anterior (np.ndarray): Malla de la iteración anterior.
+            tol (float): Tolerancia para determinar convergencia.
 
-    def evaluar_estado(dist_rho1, rhop0, diff_list, tol, px, py, ventana=110, umbral_variacion=1e-6, rho_hist=False):
+        Retorna:
+            bool: True si la norma infinita de las diferencias relativas es menor que la tolerancia, False en caso contrario.
+            float: Valor de la norma infinita de las diferencias relativas.
+        """
+        # Calcular el valor máximo entre las dos mallas para cada nodo
+        max_valores = np.maximum(np.abs(rho_actual), np.abs(rho_anterior))
+        
+        # Evitar división por cero: donde ambos son cero, la diferencia relativa será cero
+        max_valores[max_valores == 0] = 1  # Evita problemas de división
+        
+        # Calcular diferencias relativas nodo a nodo
+        dif_relativa = np.abs(rho_actual - rho_anterior) / max_valores
+        
+        # Donde ambos son cero, la diferencia relativa también debe ser cero
+        dif_relativa[(rho_actual == 0) & (rho_anterior == 0)] = 0
+        
+        # Calcular la norma infinita de las diferencias relativas
+        norma_infinita = np.linalg.norm(dif_relativa, ord=np.inf)
+        
+        # Verificar si la norma infinita está por debajo de la tolerancia
+        condicion = norma_infinita < tol
+        
+        return condicion, norma_infinita
+    '''
+
+    
+    def num_iter_esquina(nx, ny, px,  py):
+        di_left_corner = px + nx - 1 - py
+        di_right_corner = nx-1-px + ny-1-py
+        return max(di_left_corner, di_right_corner)
+    
+    def evaluar_estado(dist_rho1, rhop0, diff_list, tol, px, py, ventana=110, umbral_variacion=1e-6, rho_hist=None, num_it=100, it=3):
         """
         Evalúa las condiciones de convergencia y estabilidad para el algoritmo iterativo.
 
@@ -570,27 +564,47 @@ if __name__ == "__main__":
             ventana (int): Tamaño de la ventana para verificar tendencia.
             umbral_variacion (float): Umbral de variación para tendencia.
             rho_hist (list): Historial de redes iterativas (opcional).
+            num_it (int): Número de iteraciones esperado para alcanzar esquinas.
+            it (int): Iteración actual.
 
         Retorna:
             bool: Si se alcanzó convergencia.
-            dict: Información sobre el estado (promedio, desviación, diferencia relativa, etc.).
+            dict: Información sobre el estado.
         """
+        if not isinstance(diff_list, list):
+            raise ValueError("diff_list debe ser una lista.")
+
         # Verificar convergencia por diferencia relativa
         condicion, diff = convergencia(dist_rho1, rhop0, tol)
+        if condicion:
+            print(f"Se ha cumplido la condición de convergencia {condicion}")
+
         # Agregar la red actual al historial (si corresponde)
-        if rho_hist is not False:
+        if isinstance(rho_hist, list):
             rho_hist.append(dist_rho1.copy())
+
         # Agregar la diferencia relativa a la lista histórica
-        if diff_list is not False:
-            diff_list.append(diff)
+        diff_list.append(diff)
+
         # Verificar tendencia al promedio
         tendencia, promedio, dev_dif = verificar_convergencia(diff_list, ventana, umbral_variacion)
+        if tendencia:
+            print(f"La tendencia de variación mínima se cumple con un valor de {dev_dif}")
+
         # Verificar que todos los nodos internos sean diferentes de cero excepto el nodo (px, py)
-        mascara = np.ones_like(dist_rho1[1:-1, 1:-1], dtype=bool)  # Máscara con todos los valores True
-        mascara[py - 1, px - 1] = False  # Excluir el nodo específico
-        todos = np.all(dist_rho1[1:-1, 1:-1][mascara] != 0)
+        mascara = np.ones_like(dist_rho1[1:-1, 1:-1], dtype=bool)
+        mascara[py - 1, px - 1] = False
+
+        # Para simplificar, usamos un criterio externo (num_it e it)
+        todos = it > num_it
+        if todos:
+            print(f"Se han alcanzado las esquinas en la iteración {it}")
+
         # Evaluar condiciones finales de convergencia
         convergencia_total = (condicion and todos) or (tendencia and todos)
+        if convergencia_total:
+            print("Se ha alcanzado la convergencia global")
+
         # Construir información del estado
         estado = {
             "condicion": condicion,
@@ -601,44 +615,56 @@ if __name__ == "__main__":
             "todos": todos
         }
         return convergencia_total, estado
+
+    def verificar_convergencia(valores, ventana=110, umbral_variacion=1e-6):
+        """
+        Detecta si los valores oscilan en torno a un eje horizontal y si la variación es mínima.
+
+        Parámetros:
+            valores (list): Lista de valores.
+            ventana (int): Número de valores recientes para evaluar el promedio.
+            umbral_variacion (float): Umbral de variación aceptable entre promedios consecutivos.
+
+        Retorna:
+            bool: True si los valores han alcanzado una tendencia horizontal constante, False si no.
+            float: Promedio actual de los últimos valores (None si no se cumplen las condiciones).
+            float: Variación actual entre el último valor y el promedio actual (None si no se cumplen las condiciones).
+        """
+        if not isinstance(valores, list):
+            raise ValueError("valores debe ser una lista.")
+
+        if len(valores) < ventana:
+            print("No hay suficientes valores para evaluar la tendencia.")
+            return False, None, None
+
+        # Obtener los últimos 'ventana' valores
+        valores_recientes = np.array(valores[-ventana:])
+        promedio_actual = np.mean(valores_recientes)
+
+        # Obtener el último valor y calcular la variación actual
+        ultimo_valor = valores[-1]
+        variacion_actual = np.abs(ultimo_valor - promedio_actual)
+
+        # Comparar con la variación anterior
+        dev_i = None
+        if hasattr(verificar_convergencia, 'ultima_variacion'):
+            variacion_anterior = verificar_convergencia.ultima_variacion
+            dev_i = np.abs(variacion_actual - variacion_anterior)
+            if dev_i < umbral_variacion:
+                return True, promedio_actual, dev_i
+
+        # Guardar la variación actual para la próxima iteración
+        verificar_convergencia.ultima_variacion = variacion_actual
+        return False, promedio_actual, dev_i
+
     # Algoritmo iterativo para resolver rho
     # Em base a la malla de potencial V que exista,calcula rho donde los campos eléctricos 
     # son calculados en base a -\nabla V
-    '''
-    def algoritmo_rho_v(V, rho_ini, dx, dy, windx, windy,max_iter_rho, Jplatep, Jplaten, rho_A):
-        conv = 0
-        rho_bp =np.zeros((nodosx,nodosy), dtype=complex)
-        rho_bn =np.zeros((nodosx,nodosy), dtype=complex)
-        # En un comienzo se tiene el campo eléctrico electrostático
-        Exxi, Eyyi, Em = calcular_campo_electrico(V, dx, dy)
-        # Se define a la malla rho_b con las condiciones de borde
-        rho_bp[fixed_point[0]] = rho_A[0]
-        rho_bn[fixed_point[1]] = rho_A[1]
-        # COndición de desplazamiento de la densidad de carga debido al viento
-        rho_bp[-1,:] = Jplatep/(movp*np.sqrt(np.abs((Eyyi[-1,:]+windy[-1,:]/movp)**2))) # se postula que la dirección de E será solamente vertical
-        rho_bn[-1,:] = Jplaten/(movn*np.sqrt(np.abs((Eyyi[-1,:]+windy[-1,:]/movn)**2)))
-        rho1 = rho_ini.copy() # Parte con una distribución con ceros y las condiciones de borde, luego se actulizan los valores
-        rho1 = rho1.astype(complex)
-        for iteration in range(max_iter_rho):
-            rho0 = rho1.copy()
-            if iteration == 0:
-                rho1p, rho1n = update_rho_vectorized(rho_bp, rho_bn, Exxi, Eyyi, dx, dy, epsilon0, windx, windy, rho_bp, rho_bn)
-            else:
-                rho1p, rho1n = update_rho_vectorized(rho1p, rho1n, Exxi, Eyyi, dx, dy, epsilon0, windx, windy, rho_bp, rho_bn)
-            rho1 = rho1p-rho1n # rho1py rho1n son usados en sus valores absolutos
-            # Criterio de convergencia
-            condicion, diff = convergencia(rho1, rho0, 0.01)
-            #print(r'Tolerancia $\rho_1$ = '+str(diff))
-            if condicion:
-                #print(f"Convergencia para rho alcanzada en la iteración {iteration}")
-                break
-        #print(r'Tolerancia rho_1 = '+str(diff))
-        return np.real(rho1), np.real(rho1p), np.real(rho1n)
-    '''
+
     ################################################################
     ################################################################
-    def algoritmo_rho(V, Evvs, Vcos, Vos, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='no',
-                    rho_h=False, visu=15, muestra=False, fi=30, is_bundled = False):
+    def algoritmo_rho(sag, V, Evvs, Vcos, Vos, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='no',
+                    rho_h=False, visu=15, muestra=False, fi=30, is_bundled = False, polo=["izq", "der"]):
         '''
         Algoritmo principal de resolución del sistema de ecuaciones de la densidad de cara positiva y negativa
         Comienza con la fijacion de la distribucion de rho- como valores nulos excepto en el conductor negativo
@@ -657,8 +683,8 @@ if __name__ == "__main__":
         rhop_0= rhop_0.astype(complex)
         rhon_0 = rho_inin.copy() # copia la  red con los valores de rho_n que ya existe de antes
         rhon_0= rhon_0.astype(complex)
-        rhop_0 =impone_BC(rhop_0, rho_b, val1, px1, py1, in_condct=condi, copia=copia) # rhop_0 sería una red con condición de borde unicamente en la posición del conductor
-        rhon_0 =impone_BC(rhon_0, rho_b, val2, px2, py2, in_condct=condi, copia=copia) # rhon_0 sería una red con condición de borde unicamente en la posición del conductor
+        rhop_0 =impone_BC(rhop_0, rho_b, val1, px1, py1, in_condct=condi, copia=copia, polo=polo[0]) # rhop_0 sería una red con condición de borde unicamente en la posición del conductor
+        rhon_0 =impone_BC(rhon_0, rho_b, val2, px2, py2, in_condct=condi, copia=copia, polo=polo[1]) # rhon_0 sería una red con condición de borde unicamente en la posición del conductor
         print(f'el máximo de rho_p es: {rhop_0[(py1,px1)]}')
         '''
         plt.figure(50)
@@ -692,11 +718,11 @@ if __name__ == "__main__":
         d = movn/epsilon0
         #d = 1/epsilon0
         g = Rep/ele - movn/epsilon0
-        rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho, dx, dy, Ewxp, Ewyp, rhop_0, rhon_0, rho_b, val1, px1, py1, a, b, fac_c=1,
-                                                sig=1, condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi)
+        rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho[0], dx, dy, Ewxp, Ewyp, rhop_0, rhon_0, rho_b, val1, px1, py1, a, b, fac_c=sag[0],
+                                                sig=sag[0], condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi, polo=polo[0])
         ext_rhop = extrapolate_borders(X, Y, rhop_updated.copy(), num_layers=30)
-        rhon_updated, rnhist, dif_listn = iteraciones_rho(max_iter_rho, dx, dy, Ewxn, Ewyn, rhon_0, rhop_0, rho_b, val2, px2, py2, d, g, fac_c=-1,
-                                                sig=-1, condi=condi, copia=copia, rho_hist=rhon_hist, nombre='rho_n', est_gra=muestra, fi=fi+1)
+        rhon_updated, rnhist, dif_listn = iteraciones_rho(max_iter_rho[-1], dx, dy, Ewxn, Ewyn, rhon_0, rhop_0, rho_b, val2, px2, py2, d, g, fac_c=sag[1],
+                                                sig=sag[1], condi=condi, copia=copia, rho_hist=rhon_hist, nombre='rho_n', est_gra=muestra, fi=fi+1, polo=polo[1])
         ext_rhon = extrapolate_borders(X, Y, rhon_updated.copy(), num_layers=30)
         '''
         rhop_updated1, rphist, dif_listp = iteraciones_rho(max_iter_rho, dx, dy, Ewxp, Ewyp, rhop_updated, rhon_updated, rho_b, val1, px1, py1, a, b, fac_c=1,
@@ -718,7 +744,7 @@ if __name__ == "__main__":
 
 
     def iteraciones_rho(iteraciones, dx, dy, Ewx, Ewy, rho_iterado, rho_fijo, rho_b, val, px, py, A, B, fac_c=1, sig=1, condi = 'si',
-                        copia='si', rho_hist=False, nombre=None, est_gra=False, fi=30):
+                        copia='si', rho_hist=False, nombre=None, est_gra=False, fi=30, polo='izq'):
         '''
         Resuelve de manera iterativa la ecuación cuadrática para la densidad de carga asociado a un condcutor específico.
         Deja los bordes sin modificación.
@@ -735,33 +761,38 @@ if __name__ == "__main__":
         promedios = []
         desviaciones = []
         todos = False
-        for i in range(iteraciones):
+        iter_maximas = iteraciones+100
+        for i in range(iter_maximas): # en el caso de que se  automatizado, la cantidad total de iteraciones serán el minimo para las esquinas mas 100 iteraciones más
             if i == 0:
                 C = delta_Vp(fac_c, rho_iterado, Ewx, Ewy, dx, dy) # toma  la red que corresponde únicamente a un conductor
                 rhop0 = rho_iterado.copy()
                 dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, rho_fijo[1:-1, 1:-1], sig=sig)
-                dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_condct=condi, copia=copia)
+                dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_condct=condi, copia=copia, polo=polo)
             else:
                 rhop0 = dist_rho1.copy()
                 C = delta_Vp(fac_c, dist_rho1, Ewx, Ewy, dx, dy)
                 dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, rho_fijo[1:-1, 1:-1], sig=sig)
-                dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_condct=condi, copia=copia)
-            convergencia_total, estado = evaluar_estado(dist_rho1, rhop0, diff_list, tol=9e-07, px=px, py=py, rho_hist=rho_hist)
+                dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_condct=condi, copia=copia, polo=polo)
+            convergencia_total, estado = evaluar_estado(dist_rho1, rhop0, diff_list, tol=8e-06, px=px, py=py, rho_hist=rho_hist, num_it=iteraciones, it =  i+1)
             #condicion,diff = convergencia(dist_rho1, rhop0,1e-6)
             if estado["promedio"] is not None and estado["dev_dif"] is not None:
                 promedios.append(estado["promedio"])
                 desviaciones.append(estado["dev_dif"])
-            #if est_gra is not False:
-                #if estado["promedio"] is not None and estado["dev_dif"] is not None:
-                #    print(f'La tendencia al promedio es: {estado["tendencia"]}')
-                #    print(f'Promedio actual: {estado["promedio"]}')
-                #    print(f'Desviación del promedio actual: {estado["dev_dif"]}')
-                #    print('....................')
+            if est_gra is not False:
+                
+                if estado["promedio"] is not None and estado["dev_dif"] is not None:
+                    '''
+                    print(f'La tendencia al promedio es: {estado["tendencia"]}')
+                    print(f'Promedio actual: {estado["promedio"]}')
+                    print(f'Desviación del promedio actual: {estado["dev_dif"]}')
+                    print('....................')
+                    '''
             if convergencia_total:
                 print(f'Diferencia relativa {nombre}: {estado["diff"]}')
                 print(f'Promedio actual: {estado["promedio"]}')
                 print(f'Desviación del promedio actual: {estado["dev_dif"]}')
                 print(f'Término del algoritmo en iteración: {i}')
+                print("________________")
                 break
             #if rho_hist is not None:
             #    rho_hist.append(dist_rho1.copy())
@@ -769,8 +800,12 @@ if __name__ == "__main__":
                 #print(f'Convergencia alcanzada para {nombre} en la iteración: '+str(i))
             #   print(f'Diferencia relativa {nombre}: '+str(diff))
             #  break
-            if i == iteraciones-1:
-                print(f'No hay convergencia de {nombre}: {estado['diff']}')
+            if i == iter_maximas-1:
+                print(f'No hay convergencia de {nombre} en la iteración {i}: última dif absoluta mallas es {estado['diff']}')
+                print(f'No hay convergencia de {nombre} en la iteración {i}: último promedio actual es {estado['promedio']}')
+                print(f'No hay convergencia de {nombre} en la iteración {i}: última des del promedio actual es {estado['dev_dif']}')
+                print(f'No hay convergencia de {nombre} en la iteración {i}: última tendencia del promedio actual es {estado['tendencia']}')
+        
         if est_gra is not False:
             plt.figure(fi)
             plt.plot(promedios, label=f'Promedio iteración {i}')
@@ -780,7 +815,8 @@ if __name__ == "__main__":
             plt.title('Evolución del Promedio y Desviación')
             plt.legend()
             plt.grid(True)
-            plt.show()
+            plt.show(block=False)
+        
         return dist_rho1, rho_hist, diff_list
 
     def resuelve1(a, b, c, rho_fijo, sig=1):
@@ -803,12 +839,12 @@ if __name__ == "__main__":
         Coef = fac*(d_rho_dx*ewx[1:-1,1:-1] + d_rho_dy*ewy[1:-1,1:-1])
         return Coef
 
-    def impone_BC(rho_red, rho_b, valor, posx, posy, in_condct='si', copia='no'):
+    def impone_BC(rho_red, rho_b, valor, posx, posy, in_condct='si', copia='no', polo='izq'):
         '''
         rho_red: Malla en el cual se impone la condicion del punto
         rho_b: Malla de referencia donde se almacena los valores de los conductores
         valor: Valor de las densidad de carga del conductor, es un único valor
-        in_cond: condicional si se desea que se distribuya el valor en la periferia del conductor o bien en un único punto
+        in_condct: condicional si se desea que se distribuya el valor en la periferia del conductor o bien en un único punto
         copia: condicional si se desea copiar los valores de rho_b o no
         '''
         #print(f'valor es: {valor}')
@@ -818,17 +854,19 @@ if __name__ == "__main__":
             rho_red[posy, posx] = valor
         elif in_condct=='no':
             if copia=='no':
-                rs, rn, re, ro = val_rhoA(valor)
+                rs, rn, re, ro = val_rhoA(valor, polo)
             elif copia=='si':
                 rs = rho_b[posy+1, posx]
                 rn = rho_b[posy-1, posx]
                 re = rho_b[posy, posx+1]
                 ro = rho_b[posy, posx-1]
+            # Esta parte está pensada para distribuir el valor de la densidad de carga en la periferia del conductor
             rho_red[posy+1, posx] = rs
             rho_red[posy-1, posx] = rn
             rho_red[posy, posx+1] = re
             rho_red[posy, posx-1] = ro
         elif in_condct == 'noV':
+            # Esta parte está pensada para distribuir el voltaje en la periferia del conductor
             rho_red[posy+1, posx] = valor
             rho_red[posy-1, posx] = valor
             rho_red[posy, posx+1] = valor
@@ -837,11 +875,17 @@ if __name__ == "__main__":
             print('in_condct escogido es inválido')
         return rho_red
 
-    def val_rhoA(val):
-        r_s=val*np.cos((np.pi-np.pi)/2)
-        r_n=val*np.cos((np.pi-0)/2)
-        r_e=val*np.cos((np.pi-np.pi/2)/2)
-        r_o=val*np.cos((np.pi-np.pi/2)/2)
+    def val_rhoA(val, polo):
+        if polo == 'izq':
+            r_e=val*np.cos((np.pi-np.pi)/2)
+            r_o=val*np.cos((np.pi-0)/2)
+            r_s=val*np.cos((np.pi-np.pi/2)/2)
+            r_n=val*np.cos((np.pi-np.pi/2)/2)
+        elif polo == 'der':
+            r_e=val*np.cos((np.pi-0)/2)
+            r_o=val*np.cos((np.pi-np.pi)/2)
+            r_s=val*np.cos((np.pi-np.pi/2)/2)
+            r_n=val*np.cos((np.pi-np.pi/2)/2)
         return r_s, r_n, r_e, r_o
 
     ############################################################
@@ -944,6 +988,7 @@ if __name__ == "__main__":
 
     # Método Jacobi para resolver el sistema de ecuaciones
     def jacobi_step(u, f_rhs, dx, dy):
+        # Calcula los valores del potencial en cada punto en base a la ec.de poisson y los valores de la densidad de carga espacial
         dx2 = dx**2
         dy2 = dy**2
         unew = np.copy(u)
@@ -954,11 +999,13 @@ if __name__ == "__main__":
         return unew
 
     # Definir las condiciones de borde usando una matriz 2D
-    def apply_boundary_conditions_2D(u, V_boundary, Exx=None, Eyy=None, dx=None, dy=None):
+    def apply_boundary_conditions_2D(u, V_boundary, val_cond, pos, Exx=None, Eyy=None, dx=None, dy=None):
         """
         Aplica las condiciones de borde a la malla u utilizando la matriz V_boundary.
         También aplica condiciones de Neumann si se proporcionan Exx, Eyy, dx y dy.
         """
+        pos1 = pos[0] # [py, px]
+        pos2 = pos[1] # [py, px]
         # Borde izquierdo (Neumann si Exx está definido)
         if Exx is not None and dx is not None:
             #u[:, 0] = u[:, 1] + dx * (Exx[:, 0]+windx[:,0]/mov)
@@ -982,14 +1029,25 @@ if __name__ == "__main__":
 
         # Borde inferior (siempre Dirichlet)
         u[-1, :] = V_boundary[-1, :]
-        u[fixed_point[0]] = fixed_value[0]
-        u[fixed_point[1]] = fixed_value[1]
+        # en el conductor
+        #u[pos1] = fixed_value[0]
+        #u[pos2] = fixed_value[1]
+
+        # Se impone condicion de borde en elconductor
+        # se quitan los voltajes obtenidos en los mismos nodos donde Vmi vale el voltaje aplicado
+        # se hacen nulo en 5 nodos alrededor del conductor
+        u[pos1] = 0
+        u[pos2] = 0
+        u = impone_BC(u, V_boundary, 0, pos1[1], pos1[0], in_condct='noV', copia='no') #primero la posx y despues en posy
+        u = impone_BC(u, V_boundary, 0, pos2[1], pos2[0], in_condct='noV', copia='no')
 
         return u
 
 
     # Función modificada de v_cycle
     def update_v(u, f_rhs, dx, dy, n_cycles=1, fixed_point=None, fixed_value=None, V_boundary=None, Exx=None, Eyy=None):
+        pos1 = fixed_point[0]# [py, px]
+        pos2 = fixed_point[1]# [py, px]
         if u.shape[0] <= 3:  # Resolver directamente cuando la grilla es muy pequeña
             return jacobi_step(u, f_rhs, dx, dy)
 
@@ -997,18 +1055,21 @@ if __name__ == "__main__":
             # Pre-suavizado
             u = jacobi_step(u, f_rhs, dx, dy)
 
-            # Imponer condiciones de borde
+            # Imponer condiciones de borde, como en algoritmo_rho_v( V_boundary es V_b entonces se aplica la funcion de condiciones de borde)
             if V_boundary is not None:
-                u = apply_boundary_conditions_2D(u, V_boundary, Exx=Exx, Eyy=Eyy, dx=dx, dy=dy)
+                u = apply_boundary_conditions_2D(u, V_boundary, fixed_value, fixed_point, Exx=Exx, Eyy=Eyy, dx=dx, dy=dy)
             
             # Imponer condición fija en el punto (si está definida)
             if fixed_point is not None and fixed_value is not None:
-                u[fixed_point[0]] = fixed_value[0]
-                u[fixed_point[1]] = fixed_value[1]
+                # La idea es que los 5 nodos sean representados con potencial nulo
+                u[pos1] = fixed_value[0] # estos valores son nulos
+                u[pos2] = fixed_value[1]
+                u = impone_BC(u, V_boundary, 0, pos1[1], pos1[0], in_condct='noV', copia='no') #primero la posx y despues en posy
+                u = impone_BC(u, V_boundary, 0, pos2[1], pos2[0], in_condct='noV', copia='no')
         
         return u
 
-    # Resolver usando FMG
+
     # Algoritmo que obtien la red de potencial eléctrico en base a los valores de Rho
 
     def algoritmo_V_rho(V, rho1, dx, dy, fd_point, fd_value, max_iter):
@@ -1018,73 +1079,14 @@ if __name__ == "__main__":
         V_b = np.zeros_like(V)
         for iteration in range(max_iter):
             Vold = V.copy()
-            V = update_v(V, f_rhs, dx,dy,fixed_point=fd_point, fixed_value=[0,0], V_boundary=V_b, Exx=None,Eyy=None)
+            # Actualizar el potencial eléctrico en  base al campo de densidades de carga f_rhs
+            V = update_v(V, f_rhs, dx,dy, fixed_point=fd_point, fixed_value=[0,0], V_boundary=V_b, Exx=None,Eyy=None)
             condicion, diff = convergencia(V, Vold, 1e-6)
             if condicion:
                 print(f"Convergencia alcanzada para V en la iteración {iteration}")
                 break
         return V
 
-    def E_onset(m, delta, a):
-        '''
-        a: radio conductor (m)
-        delta: densidad relativa (ad)
-        m: factor de conductor (ad)
-        '''
-        g0 =29.8 # kV/cm
-        return 100*g0*m*(delta + 0.301*np.sqrt(delta/(100*a))) # kV/m
-    def V_onset(m, Ecr, a):
-        '''
-        a: radio conductor (m)
-        m: factor de conductor (ad)
-        Ecr: Campo crítico corona (kV/m)
-        '''
-        return m*a*2*Ecr*np.log(2*y_coor1/a)
-    '''
-    Von = V_onset
-
-    Exxini, Eyyini, Em = calcular_campo_electrico(Vmi, dx, dy) # campo electrostático inicial
-
-    #rho_inicial[fixed_point[0]] = rho_ip
-    #rho_inicial[fixed_point[1]] = rho_in
-    #rho_inicial[-1,:] = Jpp/(movp*np.sqrt(np.abs((Eyyini[-1,:]+windy[-1,:]/movp)**2)))
-    #rho_inicial[-1,:] += Jpn/(movn*np.sqrt(np.abs((Eyyini[-1,:]-windy[-1,:]/movn)**2)))
-    #print(Vmi)
-    Vm = Vmi.copy()
-    it_global = 2
-    for n in range(it_global):
-        Volder = Vm.copy()
-        # Parte estimando rho inicial en base a Vm inicial y rho1 que contiene las condciones de borde para rho
-        # Luego, con el nuevo rho_n, calcula el potencial en el espacio en base al potencial anterior Vm
-        if n==0:
-            #rho_d, rho_p, rho_n = algoritmo_rho_v(Vmi, rho_inicial, dx, dy, windx, windy, max_iter_rho, Jpp, Jpn, [rho_ip, rho_in])
-            rho_p, rho_n, rho_d = algoritmo_rho(Vmi, rho_inicial, rho_inicial, rho_boundary, max_iter_rho, dx, dy, movp, movn, windx, windy,
-                                                [rho_ip, rho_in], fixed_point, condi=cn_cond, copia=copiado, rho_h=None)
-        else:
-            #rho_d, rho_p, rho_n = algoritmo_rho_v(Vm, rho_d0, dx, dy, windx, windy, max_iter_rho, Jpp, Jpn, [rho_ip, rho_in])
-            rho_p, rho_n, rho_d = algoritmo_rho(Vmi+Vm, rho_p, rho_n, rho_boundary, max_iter_rho, dx, dy, movp, movn, windx, windy,
-                                                [rho_ip, rho_in], fixed_point, condi=cn_cond, copia=copiado, rho_h=None)
-        #rho_d0 = rho_p-rho_n # LOS rho_pn son puestos en sus valores absolutos
-        Vm = algoritmo_V_rho(Vm, rho_d, dx, dy, fixed_point, fixed_value, max_iter, Vmi)
-        condicion,diff = convergencia(Vm, Volder, 0.01)
-        if condicion:
-            print(f"Convergencia alcanzada para V en la iteración {n}")
-            print(r'Diferencia relativa V y Vold: '+str(diff))
-            break
-        else:
-            print(r'Diferencia relativa V y Vold: '+str(diff))
-    print(r'Diferencia relativa V y Vold: '+str(diff))
-
-    #for iteration in range(max_iter):
-    #rho_nuevo = densidad_voltaje(Vm, rho1)
-    #f_rhs = funcion_f(rho_nuevo)
-    print('Potencial calculado')
-    ##### Cálculo de campo eléctrico definitivo
-    ##### Cálculo de densidad de corriente iónica
-
-    #Xe,Ye =np.meshgrid(x[1:-1],y[1:-1])
-    print('Campo eléctrico y densidad de corriente iónica ya calculados')
-    '''
 
     def densidad_voltaje(Volt, rho, Rho_val1, Rho_val2, points, cond='si', cop='no'):
         py1, px1 = points[0]
@@ -1125,7 +1127,7 @@ if __name__ == "__main__":
         Vmi, Vmi2 = potencial_electrostático(fixed_point, fixed_value, X, Y, R, 0, carga=Q, st=st)
         return Vmi
 
-    def inicializar_densidad(Ey, g0, Vol, diametro, R, m, delta, nodosy, nodosx, pos_conductor1, pos_conductor2, yco, con_condct='si', copiado='no'):
+    def inicializar_densidad(Ey, g0, Vol, diametro, R, m, delta, nodosy, nodosx, pos_conductor1, pos_conductor2, yco, con_condct='si', copiado='no', fasc=False):
         """Inicializa la densidad de carga y las condiciones de borde."""
         mp, mn = m # inidices de  rugosidad
         ycop, ycon = yco
@@ -1140,8 +1142,8 @@ if __name__ == "__main__":
         #V0n = V_onset(mn, Ecritn, R[1]) # cálcula voltaje crítico polo negativo
         V0p = Vol_crit(Ecritp, ycop*100, R[0]*100) # cálcula voltaje crítico polo positivo kV
         V0n = Vol_crit(Ecritn, ycon*100, R[1]*100) # cálcula voltaje crítico polo negativo kV
-        Coronap = Hay_corona(Volp/1000, ycop*100, R[0]*100, delta, mp, g0)
-        Coronan = Hay_corona(Voln/1000, ycon*100, R[1]*100, delta, mn, g0)
+        Coronap = Hay_corona(Volp/1000, ycop*100, R[0]*100, delta, mp, g0, fasciculo=fasc)
+        Coronan = Hay_corona(Voln/1000, ycon*100, R[1]*100, delta, mn, g0, fasciculo=fasc)
         rho_ip, rho_in = rhoA(Ey, diametro, epsilon0, V0p*1000, V0n*1000, V, Ecritp*10**5, Ecritn*10**5, R)
         if not Coronap and not Coronan:
             rho_ip, rho_in = 0,0
@@ -1167,7 +1169,7 @@ if __name__ == "__main__":
         '''
         return rho_inicial, rho_boundary, rho_ip, rho_in
 
-    def iterar_potencial(Vmi, Evvs, Vcos, Vos, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, windx, windy, max_iter_rho, max_iter,
+    def iterar_potencial(sag, Vmi, Evvs, Vcos, Vos, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, windx, windy, max_iter_rho, max_iter,
                         it_global, rho_h = False, visu=15, con_condct='si', copiado='no', must = False, fi=30, is_bundled=False):
         """Itera para calcular el potencial eléctrico y la densidad de carga."""
         Vm = np.zeros_like(Vmi)
@@ -1182,14 +1184,14 @@ if __name__ == "__main__":
             Volder = Vm.copy()
             if n == 0:
                 print('Primer rho')
-                rho_p, rho_n, rho_d = algoritmo_rho(Vmi, Evvs, Vcos, Vos, rho_inicial, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov1, mov2, windx, windy,
+                rho_p, rho_n, rho_d = algoritmo_rho(sag, Vmi, Evvs, Vcos, Vos, rho_inicial, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov1, mov2, windx, windy,
                                                 [rho_ip, rho_in], fixed_point, condi=con_condct, copia=copiado, rho_h=rho_h, visu=visu, muestra=must, fi=fi, is_bundled=is_bundled)
                 #Vp =algoritmo_V_rho(Vm, rho_p, dx, dy,fixed_point[0], 0, max_iter)
                 #Vn =algoritmo_V_rho(Vm, rho_n, dx, dy,fixed_point[1], 0, max_iter)
             else:
                 print(f'Comienza nueva actualización de rho número {n + 1}')
-                #rho_p, rho_n, rho_d = algoritmo_rho(Vmi+Vm, rho_p, rho_n, rho_boundary, max_iter_rho, dx, dy, movp, movn, windx, windy,
-                #                                 [rho_ip, rho_in], fixed_point, condi=con_condct, copia=copiado, rho_h=rho_h, visu=visu, muestra=must, fi=fi)
+                #rho_p, rho_n, rho_d = algoritmo_rho(sag, Vmi+Vm, Evvs, Vcos, Vos, rho_p, rho_n, rho_boundary, max_iter_rho, dx, dy, mov1, mov2, windx, windy,
+                #                                 [rho_ip, rho_in], fixed_point, condi=con_condct, copia=copiado, rho_h=rho_h, visu=visu, muestra=must, fi=fi, is_bundled=is_bundled)
                 #rho_p, rho_n = densidad_voltaje([Vp,Vn], rho_boundary, rho_ip, rho_in, fixed_point, cond=con_condct, cop=copiado)
                 rho_d = densidad_voltaje(Vm, rho_boundary, rho_ip, rho_in, fixed_point, cond=con_condct, cop=copiado)
             Vm = algoritmo_V_rho(Vm, rho_d, dx, dy, fixed_point, 0, max_iter)
@@ -1203,7 +1205,7 @@ if __name__ == "__main__":
                 print('*****************************')
             if n==it_global-1:
                 print(f'se alcanzó el máximo de iteraciones: {n}')
-        Vm = -Vm
+        Vm = -Vm # ajuste intensionadooo
         return Vm, rho_p, rho_n, rho_d
 
 
@@ -1227,7 +1229,7 @@ if __name__ == "__main__":
     #print(r'Jp promedio calculado a l=0 m: '+str(np.mean(J[-1,:])/(10**(-9)))+' nA/m^2, y a l='+str(l)+' m, Jp ='+str(Jave*(10**9))+' nA/m^2')
     #print(r'Jp promedio propuesto: '+str(Jp*(10**9))+' nA/m^2')
 
-    def ejecutar_algoritmo(fixed_point, diametro, fixed_value, X, Y, R, Q, mov, m, delta, nodosy, nodosx, yco, g0,
+    def ejecutar_algoritmo(sag, fixed_point, diametro, fixed_value, X, Y, R, Q, mov, m, delta, nodosy, nodosx, yco, g0,
                             dx, dy, windx, windy, max_iter_rho, Evvs, Vcos, max_iter, it_global, l, visualizacion, rho_h=False,
                             condct='si', copy='no', Muestra=False, fi=30, is_bundled=False):
         """Ejecuta el algoritmo completo ajustando Jp hasta cumplir la condición de convergencia."""
@@ -1237,15 +1239,16 @@ if __name__ == "__main__":
         pos_conductor1 =  fixed_point[0]
         pos_conductor2 =  fixed_point[1]
         print('----------------------------------')
+        print(f"es fasciculado?: {is_bundled}")
         # Paso 1: Calcular potencial inicial
         Vmi = calcular_potencial_inicial(fixed_point, fixed_value, X, Y, R, Q, st='noV') # Ubicar en 5 nodos con el voltaje de +- en cada conductor
         Exx,  Eyy,  E = calcular_campo_electrico(Vmi, dx, dy, fixed_point, Evvs, Vcos, fixed_value, kapzov_borde=True, bundle=is_bundled)
         Ey = E[nod_central[1],nod_central[0]] # Componente vertical del campo eléctrico en punto medio entre los conductores, necesario  para cb carga en conductor
         # Paso 2: Inicializar densidades
         rho_inicial, rho_boundary, rho_ip, rho_in = inicializar_densidad(Ey, g0, fixed_value,  diametro, R, m, delta, nodosy, nodosx, pos_conductor1,
-                                                                pos_conductor2, yco, con_condct=condct, copiado=copy)
+                                                                pos_conductor2, yco, con_condct=condct, copiado=copy, fasc = is_bundled)
         # Paso 3: Iterar para calcular Vm y rho
-        Vm, rho_p, rho_n, rho_d = iterar_potencial(Vmi, Evvs, Vcos, fixed_value, rho_inicial, rho_boundary, [rho_ip, rho_in], fixed_point, dx, dy, windx, windy,
+        Vm, rho_p, rho_n, rho_d = iterar_potencial(sag, Vmi, Evvs, Vcos, fixed_value, rho_inicial, rho_boundary, [rho_ip, rho_in], fixed_point, dx, dy, windx, windy,
                                                     max_iter_rho, max_iter, it_global, rho_h=rho_h, visu=visualizacion, con_condct=condct, copiado=copy, must = Muestra, fi=fi, is_bundled=is_bundled)
         #fi += 1
         visualizacion += 2
@@ -1333,9 +1336,9 @@ if __name__ == "__main__":
                 "Estado sup cond 2": [m2],
                 "Radio equivalente 1 (cm)": [Req1],
                 "Radio equivalente 2 (cm)": [Req2],
-                "Gradiente superficial crítico izq (kV/cm)": Evv1,
+                "Gradiente superficial crítico izq (kV/cm)": Evv10,
                 "Potencial crítico corona izq (kV)": evv1,
-                "Gradiente superficial crítico der (kV/cm)": Evv2,
+                "Gradiente superficial crítico der (kV/cm)": Evv20,
                 "Potencial crítico corona der (kV)": evv2
             }
             df_conductores = pd.DataFrame(datos_conductores)
@@ -1366,6 +1369,8 @@ if __name__ == "__main__":
                 "Max iter rho": [max_iter_rho],
                 "Max iter V": [max_iter],
                 "Max iter Gob": [it_global],
+                "Max  iter esquinas 1": [n_iter_corner1],
+                "Max  iter esquinas 2": [n_iter_corner2],
             }
             df_iteraciones = pd.DataFrame(datos_iteraciones)
 
@@ -1432,10 +1437,10 @@ if __name__ == "__main__":
     # Extraer parámetros necesarios
     #area1 = float(params["Área (mm²)"])
     #area2 = float(params["Área 2 (mm²)"])
-    tipo1, nombre1, areas1 = params["Área (mm²)"]
+    tipo1, nombre1, areas1 = params["Conductor"]
     diametro1 = float(areas1[1])
     area1 =float(areas1[0])
-    tipo2, nombre2, areas2 = params["Área 2 (mm²)"]
+    tipo2, nombre2, areas2 = params["Conductor 2"]
     diametro2 = float(areas2[1])
     area2 =float(areas2[0])
     cantidad = int(params["Subconductores"])
@@ -1475,7 +1480,7 @@ if __name__ == "__main__":
     m = [m1, m2]
     l = float(params["Medición (m)"])
     gra = params["graficos"]
-    print(f"los graficos seleccionados son {gra}")
+    #print(f"los graficos seleccionados son {gra}")
     print(str(area1))
     print(str(area2))
     print(str(sep))
@@ -1489,6 +1494,11 @@ if __name__ == "__main__":
     print(f'{Req},{R} en m')
     
     max_iter_rho = int(params["Max iter rho"])
+    cond_rho = params["iteraciones rho"] # si es True, entonces la cantidad de iteraciones para rho es manual, si no, es automática
+    print(f"cond rho es {cond_rho}")
+    if cond_rho:
+        max_it_rhos = [max_iter_rho]
+
     max_iter = int(params["Max iter V"])
     it_global = int(params["Max iter Gob"])
 
@@ -1507,9 +1517,15 @@ if __name__ == "__main__":
     Evvs = [Evv1*10**5, Evv2*10**5] # V/m
     evv1 = Vol_crit(Evv1, y_coor1*100, Req*100) # kV
     evv2 = Vol_crit(Evv2, y_coor2*100, Req*100) # kV
+    if is_bundled:
+        Evv10 = Evv1*ajustar_gradiente(np.abs(Vol1/1000), evv1) # kV
+        Evv20 = Evv2*ajustar_gradiente(np.abs(Vol2/1000), evv2) # kV
+    else:
+        Evv10 = Evv1
+        Evv20 = Evv2
     Vcos = [evv1*1000, evv2*1000] # V
-    print(f"potencial critico corona polo  positivo es {evv1} kV y gradiente superficial critico es {Evv1} kV/cm")
-    print(f"potencial critico corona polo  negativo es {evv2} kV y gradiente superficial critico es {Evv2} kV/cm")
+    print(f"potencial critico corona polo  positivo es {evv1} kV y gradiente superficial critico es {Evv10} kV/cm")
+    print(f"potencial critico corona polo  negativo es {evv2} kV y gradiente superficial critico es {Evv20} kV/cm")
     fi = 30 # número de la ventana donde se muestra la evolución de la diferencia promedio y la desviación
     epsilon0 = (1 / (36 * np.pi)) * 10**(-9)  # (F/m) permitividad del vacío
     K = 1 / (2 * np.pi * epsilon0)  # factor de multiplicación
@@ -1517,11 +1533,11 @@ if __name__ == "__main__":
     #in_condct = 'si' # Condición de que se ubica la densidad de carga alrededor del conductor o solo en un nodo central
     copiado = 'no' # Condición de que los valores sean copiados o no al momento de mantener las condiciones de borde en las mallas
     histl = False # Si se desea crear la lista de evolución de la densidad de carga
-    mostrar = False # Permite mostrar los datos de la convergencia de rho inicial
+    mostrar = True # Permite mostrar los datos de la convergencia de rho inicial
     guarda = params["guardar"]
-    print(f"guardado: {guarda}")
+    #print(f"guardado: {guarda}")
     in_condct = params["Interior conductor"]
-    print(f"enconductor es: {in_condct}")
+    #print(f"en conductor es: {in_condct}")
     # Definir coordenadas de la malla en x y y
     x,y, nodosx, nodosy, Sx, Sy = discretiza(Req, nodox=nodosx, nodoy=nodosy, sx=Sx, sy=Sy)  
     X,Y =np.meshgrid(x,y)
@@ -1535,20 +1551,30 @@ if __name__ == "__main__":
     fixed_value = [fixed_value1, fixed_value2]
     pos_central = ((x_coor1+x_coor2)/2, (y_coor1+y_coor2)/2)
     nod_central = encuentra_nodos(x, y, pos_central[0], pos_central[1])
-    print(f"malla X {X}")
-    print("________________")
-    print(f"malla Y {Y}")
-    print(f"nodos x: {nodosx}, nodos y: {nodosy}")
-    print(f"Sx: {Sx}, Sy: {Sy}")
-    print(f"dx: {dx}, dy: {dy}")
+    print(f"datos para numero iter conductor1 son {nodosx}, {nodosy}, {posx_conductor1}, {posy_conductor1}, {posx_conductor2}, {posy_conductor2}")
+    n_iter_corner1 = num_iter_esquina(nodosx, nodosy, posx_conductor1 ,posy_conductor1)
+    print(f"Para nx={nodosx}, ny={nodosy} el número de iteraciones necesarias para alcanzar las esquinas desde px={posx_conductor1}, py={posy_conductor1} es de {n_iter_corner1}")
+    n_iter_corner2 = num_iter_esquina(nodosx, nodosy, posx_conductor2 ,posy_conductor2)
+    print(f"Para nx={nodosx}, ny={nodosy} el número de iteraciones necesarias para alcanzar las esquinas desde px={posx_conductor2}, py={posy_conductor2} es de {n_iter_corner2}")
+    if not cond_rho:
+        max_it_rhos = [n_iter_corner1, n_iter_corner2]
+    sag1 = int(ma.copysign(1, Vol1))
+    sag2 = int(ma.copysign(1, Vol2))
+    sag = [sag1,sag2]
+#print(f"malla X {X}")
+    #print("________________")
+    #print(f"malla Y {Y}")
+    #print(f"nodos x: {nodosx}, nodos y: {nodosy}")
+    #print(f"Sx: {Sx}, Sy: {Sy}")
+    #print(f"dx: {dx}, dy: {dy}")
 
     # Ajuste de viento
     wndx1 = np.ones((nodosy, nodosx)) * viento_x
     wndy1 = np.ones((nodosy, nodosx)) * viento_y
     windx, windy = windDist(wndx1, wndy1, l, Y, rug, uni=modo) # Se calcula la distribución de viento
-    print(f"viento x:  {windx}")
-    print("__________")
-    print(f"viento y:  {windy}")
+    #print(f"viento x:  {windx}")
+    #print("__________")
+    #print(f"viento y:  {windy}")
 
     ########## ALGORITMO PRINCIPAL  ################
     coordenada = [(x_coor1,y_coor1),(x_coor2,y_coor2)]
@@ -1581,11 +1607,11 @@ if __name__ == "__main__":
 
 
 
-    Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Ji, Jave, Jtot = ejecutar_algoritmo(fixed_point, distancia,
+    Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Ji, Jave, Jtot = ejecutar_algoritmo(sag, fixed_point, distancia,
                                                                                                     fixed_value, X, Y, R,
                                                                                                     Q, mov, m, delta, nodosy,
                                                                                                         nodosx, yco, g0, dx, dy, windx,
-                                                                                                        windy, max_iter_rho, Evvs, Vcos,
+                                                                                                        windy, max_it_rhos, Evvs, Vcos,
                                                                                                             max_iter, it_global,
                                                                                                             l, visualizacion, rho_h=histl,
                                                                                                                 condct=in_condct, copy=copiado,
