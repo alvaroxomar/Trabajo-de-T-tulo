@@ -18,6 +18,22 @@ if __name__ == "__main__":
     import sys
     import pandas as pd
     import os
+    def guarda_graficos(nombre, ruta, guarda=False):
+        global ruta_destino
+        if guarda:
+            # Asegúrate de que la carpeta existe
+            if not os.path.exists(ruta):
+                os.makedirs(ruta)
+            # Construye la ruta de forma segura
+            ruta_carpeta = os.path.join(ruta, f"{nombre}.png")
+            print(ruta_carpeta)
+            try:
+                plt.savefig(ruta_carpeta)
+                print(f"Imagen guardada en: {ruta_carpeta}")
+            except PermissionError:
+                print(f"No se pudo guardar el archivo en {ruta_carpeta}. Verifica permisos.")
+            except Exception as e:
+                print(f"Error al guardar la imagen: {e}")
     ############### FUNCIONES ###################
     def pressure_height(altura,tempe):
         P0  = 101325 # Pa
@@ -576,8 +592,8 @@ if __name__ == "__main__":
 
         # Verificar convergencia por diferencia relativa
         condicion, diff = convergencia(dist_rho1, rhop0, tol)
-        if condicion:
-            print(f"Se ha cumplido la condición de convergencia {condicion}")
+        #if condicion:
+        #    print(f"Se ha cumplido la condición de convergencia {condicion}")
 
         # Agregar la red actual al historial (si corresponde)
         if isinstance(rho_hist, list):
@@ -588,8 +604,8 @@ if __name__ == "__main__":
 
         # Verificar tendencia al promedio
         tendencia, promedio, dev_dif = verificar_convergencia(diff_list, ventana, umbral_variacion)
-        if tendencia:
-            print(f"La tendencia de variación mínima se cumple con un valor de {dev_dif}")
+        #if tendencia:
+            #print(f"La tendencia de variación mínima se cumple con un valor de {dev_dif}")
 
         # Verificar que todos los nodos internos sean diferentes de cero excepto el nodo (px, py)
         mascara = np.ones_like(dist_rho1[1:-1, 1:-1], dtype=bool)
@@ -597,8 +613,8 @@ if __name__ == "__main__":
 
         # Para simplificar, usamos un criterio externo (num_it e it)
         todos = it > num_it
-        if todos:
-            print(f"Se han alcanzado las esquinas en la iteración {it}")
+        #if todos:
+            #print(f"Se han alcanzado las esquinas en la iteración {it}")
 
         # Evaluar condiciones finales de convergencia
         convergencia_total = (condicion and todos) or (tendencia and todos)
@@ -634,7 +650,7 @@ if __name__ == "__main__":
             raise ValueError("valores debe ser una lista.")
 
         if len(valores) < ventana:
-            print("No hay suficientes valores para evaluar la tendencia.")
+            #print("No hay suficientes valores para evaluar la tendencia.")
             return False, None, None
 
         # Obtener los últimos 'ventana' valores
@@ -724,6 +740,34 @@ if __name__ == "__main__":
         rhon_updated, rnhist, dif_listn = iteraciones_rho(max_iter_rho[-1], dx, dy, Ewxn, Ewyn, rhon_0, rhop_0, rho_b, val2, px2, py2, d, g, fac_c=sag[1],
                                                 sig=sag[1], condi=condi, copia=copia, rho_hist=rhon_hist, nombre='rho_n', est_gra=muestra, fi=fi+1, polo=polo[1])
         ext_rhon = extrapolate_borders(X, Y, rhon_updated.copy(), num_layers=30)
+        count = 0
+        while True and count < 10:
+            rhop_updated_0 = ext_rhop.copy()
+            rhon_updated_0 = ext_rhon.copy()
+            rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho[0], dx, dy, Ewxp, Ewyp, rhop_updated, rhon_updated, rho_b, val1, px1, py1, a, b, fac_c=sag[0],
+                                                    sig=sag[0], condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi, polo=polo[0])
+            ext_rhop = extrapolate_borders(X, Y, rhop_updated.copy(), num_layers=30)
+            rhon_updated, rnhist, dif_listn = iteraciones_rho(max_iter_rho[-1], dx, dy, Ewxn, Ewyn, rhon_updated, rhop_updated, rho_b, val2, px2, py2, d, g, fac_c=sag[1],
+                                                    sig=sag[1], condi=condi, copia=copia, rho_hist=rhon_hist, nombre='rho_n', est_gra=muestra, fi=fi+1, polo=polo[1])
+            ext_rhon = extrapolate_borders(X, Y, rhon_updated.copy(), num_layers=30)
+            condicion_rhop, diferp = convergencia(ext_rhop, rhop_updated_0, 1e-6)
+            condicion_rhon, difern = convergencia(ext_rhon, rhon_updated_0, 1e-6)
+            if condicion_rhon and condicion_rhop:
+                break
+            count += 1
+            print("**************")
+            print(f"En la iteracion {count-1} la maxima diferencia para rho_p es {diferp}")
+            print(f"En la iteracion {count-1} la maxima diferencia para rho_n es {diferp}")
+            print(":::::::::::::::")
+    
+        '''
+        rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho[0], dx, dy, Ewxp, Ewyp, rhop_0, rhon_0, rho_b, val1, px1, py1, a, b, fac_c=sag[0],
+                                                sig=sag[0], condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi, polo=polo[0])
+        ext_rhop = extrapolate_borders(X, Y, rhop_updated.copy(), num_layers=30)
+        rhon_updated, rnhist, dif_listn = iteraciones_rho(max_iter_rho[-1], dx, dy, Ewxn, Ewyn, rhon_0, rhop_0, rho_b, val2, px2, py2, d, g, fac_c=sag[1],
+                                                sig=sag[1], condi=condi, copia=copia, rho_hist=rhon_hist, nombre='rho_n', est_gra=muestra, fi=fi+1, polo=polo[1])
+        ext_rhon = extrapolate_borders(X, Y, rhon_updated.copy(), num_layers=30)
+        '''
         '''
         rhop_updated1, rphist, dif_listp = iteraciones_rho(max_iter_rho, dx, dy, Ewxp, Ewyp, rhop_updated, rhon_updated, rho_b, val1, px1, py1, a, b, fac_c=1,
                                                 sig=1, condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi)
@@ -755,13 +799,14 @@ if __name__ == "__main__":
         px,py: posiciones del conductor iterado
         fac_c: depende del tipo de conductor considerado
         '''
+        global ruta_destino
         dist_rho1 =np.zeros_like(rho_iterado)
         dist_rho1 = dist_rho1.astype(complex)
         diff_list = []
         promedios = []
         desviaciones = []
         todos = False
-        iter_maximas = iteraciones+100
+        iter_maximas = iteraciones+150
         for i in range(iter_maximas): # en el caso de que se  automatizado, la cantidad total de iteraciones serán el minimo para las esquinas mas 100 iteraciones más
             if i == 0:
                 C = delta_Vp(fac_c, rho_iterado, Ewx, Ewy, dx, dy) # toma  la red que corresponde únicamente a un conductor
@@ -775,9 +820,10 @@ if __name__ == "__main__":
                 dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_condct=condi, copia=copia, polo=polo)
             convergencia_total, estado = evaluar_estado(dist_rho1, rhop0, diff_list, tol=8e-06, px=px, py=py, rho_hist=rho_hist, num_it=iteraciones, it =  i+1)
             #condicion,diff = convergencia(dist_rho1, rhop0,1e-6)
-            if estado["promedio"] is not None and estado["dev_dif"] is not None:
+            if estado["promedio"] is not None and estado["dev_dif"] is not None and estado["diff"] is not None:
                 promedios.append(estado["promedio"])
                 desviaciones.append(estado["dev_dif"])
+                diff_list.append(estado["diff"])
             if est_gra is not False:
                 
                 if estado["promedio"] is not None and estado["dev_dif"] is not None:
@@ -801,22 +847,26 @@ if __name__ == "__main__":
             #   print(f'Diferencia relativa {nombre}: '+str(diff))
             #  break
             if i == iter_maximas-1:
+                
                 print(f'No hay convergencia de {nombre} en la iteración {i}: última dif absoluta mallas es {estado['diff']}')
                 print(f'No hay convergencia de {nombre} en la iteración {i}: último promedio actual es {estado['promedio']}')
                 print(f'No hay convergencia de {nombre} en la iteración {i}: última des del promedio actual es {estado['dev_dif']}')
                 print(f'No hay convergencia de {nombre} en la iteración {i}: última tendencia del promedio actual es {estado['tendencia']}')
-        
+                
         if est_gra is not False:
+            '''
             plt.figure(fi)
-            plt.plot(promedios, label=f'Promedio iteración {i}')
-            plt.plot(desviaciones, label=f'Desviación iteración {i}')
+            plt.plot(diff_list[20:len(promedios)], "o", linestyle='-', linewidth=1, label=f"Diferencias absolutas $\\rho_{{m}} - \\rho_m$ {i}")
+            plt.plot(promedios[20:], "s",linestyle='-', linewidth=1, label=f'Promedio iteración $\\delta_0=mean(\\rho_{{k+1}}-\\rho_k)$ {i}')
+            plt.plot(desviaciones[20:], "^",linestyle='-', linewidth=1, label=f'Desviación iteración $\\delta-\\delta_0$ {i}')
             plt.xlabel('Iteraciones')
             plt.ylabel('Valor')
-            plt.title('Evolución del Promedio y Desviación')
+            plt.title(f'Evolución del Promedio y Desviación para {nombre}')
             plt.legend()
             plt.grid(True)
             plt.show(block=False)
-        
+            #guarda_graficos(f"Evolución promedio y desviación {nombre}", ruta_destino, guarda=guarda)
+            '''
         return dist_rho1, rho_hist, diff_list
 
     def resuelve1(a, b, c, rho_fijo, sig=1):
@@ -1215,16 +1265,15 @@ if __name__ == "__main__":
         movp, movn = mov
         Exxini, Eyyini, Eini =calcular_campo_electrico(Vmi, dx, dy, posicion_cond, Evvs, Vcos, Vos, kapzov_borde=False, bundle=False)
         Edefx, Edefy, Edef = calcular_campo_electrico(Vol_def, dx, dy, posicion_cond, Evvs, Vcos, Vos, kapzov_borde=True, bundle=is_bundled)
-        Ei = Edef[encuentra_nodos(x, y, 0, l)[1],  :] # Magnitud campo eléctrico nivel de piso
-        Jplus = rho_p*movp*np.sqrt((Edefx+(windx/movp))**2 + (Edefy+(windy/movp))**2)
-        Jdiff = rho_n*movn*np.sqrt((Edefx-(windx/movn))**2 + (Edefy-(windy/movn))**2)
-        Jtotal = np.sqrt((rho_p*movp*(Edefx+(windx/movp))+rho_n*movn*(Edefx+(windx/movn)))**2 + (rho_p*movp*(Edefy+(windy/movp))+rho_n*movn*(Edefy+(windy/movn)))**2)
-        J = Jplus + Jdiff
-        Jave = np.mean(J[-1,:]) # Promedio densidad de corriente a nivel  de piso
-        Ji = J[encuentra_nodos(x, y, 0, l)[1], :]  # Densidad de corriente a nivel de l
+        Ei = Edef[encuentra_nodos(x, y, 0, l)[1],  :] # Perfil Magnitud campo eléctrico nivel de piso medido a 1m
+        #Jplus = rho_p*movp*np.sqrt((Edefx+(windx/movp))**2 + (Edefy+(windy/movp))**2)
+        #Jdiff = rho_n*movn*np.sqrt((Edefx-(windx/movn))**2 + (Edefy-(windy/movn))**2)
+        Jtx = rho_p*movp*(Edefx+(windx/movp)) + rho_n*movn*(Edefx-(windx/movn)) # componente en  x de la densidad de corriente total
+        Jty = rho_p*movp*(Edefy+(windy/movp)) + rho_n*movn*(Edefy-(windy/movn)) # componente en  y de la densidad de corriente total
+        Jtotal = np.sqrt(Jtx**2 + Jty**2) # Módulo
         Campo_ini = [Exxini, Eyyini, Eini]
         Campo_fin = [Edefx, Edefy, Edef]
-        return Jave, Ji, Campo_ini, Campo_fin, Ei, Jtotal
+        return Jtx, Jty, Campo_ini, Campo_fin, Ei, Jtotal
 
     #print(r'Jp promedio calculado a l=0 m: '+str(np.mean(J[-1,:])/(10**(-9)))+' nA/m^2, y a l='+str(l)+' m, Jp ='+str(Jave*(10**9))+' nA/m^2')
     #print(r'Jp promedio propuesto: '+str(Jp*(10**9))+' nA/m^2')
@@ -1254,7 +1303,7 @@ if __name__ == "__main__":
         visualizacion += 2
         # Paso 4: Calcular resultados finales
         Vol_def = Vm+Vmi
-        Jave, Ji, Campo_ini, Campo_fin, Ei , Jtot= calcular_resultados_finales(Vm, fixed_value, Vcos, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l, fixed_point, Evvs, is_bundled = is_bundled)
+        Jtx, Jty, Campo_ini, Campo_fin, Ei , Jtot= calcular_resultados_finales(Vm, fixed_value, Vcos, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l, fixed_point, Evvs, is_bundled = is_bundled)
         '''
         print(f'Jp promedio calculado: {Jave * 1e9} nA/m^2')
         #print(f'Jp promedio propuesto: {Jp * 1e9} nA/m^2')
@@ -1272,10 +1321,10 @@ if __name__ == "__main__":
             print('Algoritmo completado con éxito.')
         
         '''
-        return Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Ji, Jave, Jtot
+        return Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Jtx, Jty, Jtot
 
     ####### Almacenamiento de datos en archivos xlsx y csv
-
+    '''
     def guardar_datos_multihoja(distancias, campo_electrico, densidad_corriente, ruta=".", nombre_csv="datos.csv", nombre_excel="datos.xlsx", guarda=False):
         """
         Guarda listas en archivos CSV y Excel. Los datos se organizan en múltiples hojas en el archivo Excel.
@@ -1299,8 +1348,9 @@ if __name__ == "__main__":
             # Crear DataFrame principal (Campo Eléctrico y Corriente)
             data_principal = {
                 "Lateral Distance x[m]": distancias,
-                "|E| [kV/m]": campo_electrico,
-                "J [nA/m^2]": densidad_corriente}
+                "E_y [kV/m]": campo_electrico,
+                "J [nA/m^2]": densidad_corriente,
+                "|E| [kV/m]": np.round(np.mean(np.abs(Edef[encuentra_nodos(x, y, 0, l)[1],:]/1000)),5)}
             df_principal = pd.DataFrame(data_principal)
 
             # Crear las rutas completas para los archivos
@@ -1313,6 +1363,67 @@ if __name__ == "__main__":
                 print(f"Datos principales guardados como '{ruta_csv}'.")
             else:
                 print(f"Archivo CSV existente. No se sobrescribió: '{ruta_csv}'.")
+    '''
+    #########################
+    def guardar_datos_multihoja(distancias, campo_electrico, densidad_corriente, ruta=".", nombre_csv="datos.csv", nombre_excel="datos.xlsx", guarda=False):
+        """
+        Guarda listas en archivos CSV y Excel. Los datos se organizan en múltiples hojas en el archivo Excel.
+
+        Args:
+            distancias (list or np.array): Lista de distancias físicas.
+            campo_electrico (list or np.array): Lista de valores del campo eléctrico.
+            densidad_corriente (list or np.array): Lista de valores de densidad de corriente.
+            ruta (str): Ruta base donde se guardarán los archivos.
+            nombre_csv (str): Nombre del archivo CSV a generar.
+            nombre_excel (str): Nombre del archivo Excel a generar.
+            guarda (bool): Indicador para guardar o no los archivos.
+        """
+
+        if guarda:
+            # Asegurarse de que la ruta base exista
+            os.makedirs(ruta, exist_ok=True)
+            
+
+            # Verificar si la carpeta objetivo ya existe
+            nueva_ruta = os.path.join(ruta, "Resultados")
+            if os.path.exists(nueva_ruta):
+                # Agregar un sufijo '_new' al nombre si ya existe
+                nueva_ruta += "_new"
+                while os.path.exists(nueva_ruta):
+                    nueva_ruta += "_new"  # Repetir el sufijo si la carpeta '_new' también existe
+
+            try:
+                os.makedirs(nueva_ruta)
+            except OSError as e:
+                print(f"Error al crear la carpeta: {e}")
+
+
+            # Crear DataFrame principal (Campo Eléctrico y Corriente)
+            data_principal = {
+                "Lateral Distance x[m]": distancias,
+                "E_y [kV/m]": campo_electrico,
+                "|E| [kV/m]": Ei/1000,  # Ei ya es un arreglo 1d con el perfil de la magnitud de campo eleçtrico medido a 1 m, está en kV/m
+                "J [nA/m^2]": densidad_corriente,
+                "Jx [nA/m^2]": Jtx_level*10**9,
+                "Jy [nA/m^2]": Jty_level*10**9
+            }
+            df_principal = pd.DataFrame(data_principal)
+            if len(distancias) != len(campo_electrico) or len(distancias) != len(densidad_corriente):
+                raise ValueError("Las listas de datos deben tener la misma longitud.")
+            # Crear las rutas completas para los archivos
+            ruta_csv = os.path.join(nueva_ruta, nombre_csv)
+            ruta_excel = os.path.join(nueva_ruta, nombre_excel)
+
+            # Guardar como CSV
+            df_principal.to_csv(ruta_csv, index=False)
+            print(f"Datos principales guardados como '{ruta_csv}'.")
+
+            # Guardar como Excel
+            with pd.ExcelWriter(ruta_excel, engine="openpyxl") as writer:
+                df_principal.to_excel(writer, sheet_name="Datos Principales", index=False)
+            print(f"Datos principales guardados como '{ruta_excel}'.")
+
+            ####################
 
             # Preparar los datos extra para cada hoja
             datos_conductores = {
@@ -1481,9 +1592,9 @@ if __name__ == "__main__":
     l = float(params["Medición (m)"])
     gra = params["graficos"]
     #print(f"los graficos seleccionados son {gra}")
-    print(str(area1))
-    print(str(area2))
-    print(str(sep))
+    #print(str(area1))
+    #print(str(area2))
+    #print(str(sep))
     Req1, R1 = calculo_radio_eq(cantidad, area1, sep, conversion=conversion, es_mcm=es_mcm, es_cm=es_cm) # están en cm
     Req2, R2 = calculo_radio_eq(cantidad, area2, sep, conversion=conversion, es_mcm=es_mcm, es_cm=es_cm) # están en cm
     print(f"radio eq {Req1} y radio subconductor {R1} en cm")
@@ -1495,7 +1606,7 @@ if __name__ == "__main__":
     
     max_iter_rho = int(params["Max iter rho"])
     cond_rho = params["iteraciones rho"] # si es True, entonces la cantidad de iteraciones para rho es manual, si no, es automática
-    print(f"cond rho es {cond_rho}")
+    #3print(f"cond rho es {cond_rho}")
     if cond_rho:
         max_it_rhos = [max_iter_rho]
 
@@ -1607,7 +1718,7 @@ if __name__ == "__main__":
 
 
 
-    Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Ji, Jave, Jtot = ejecutar_algoritmo(sag, fixed_point, distancia,
+    Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Jtx, Jty, Jtot = ejecutar_algoritmo(sag, fixed_point, distancia,
                                                                                                     fixed_value, X, Y, R,
                                                                                                     Q, mov, m, delta, nodosy,
                                                                                                         nodosx, yco, g0, dx, dy, windx,
@@ -1618,25 +1729,19 @@ if __name__ == "__main__":
                                                                                                                 Muestra=mostrar, fi=fi, is_bundled=is_bundled)
     Exxini, Eyyini, Em = Campo_ini
     Edefx, Edefy, Edef = Campo_fin
-    Jave = np.mean(Jtot[encuentra_nodos(x, y, 0,l)[1],:])
+    # Promedio del perfil módulo densidad de corriente total a nivel de medición
+    # Este solo es usado para la leyenda
+    Jtx_level = Jtx[encuentra_nodos(x,y,0,l)[1],:] # Perfil de la componente en x de la densidad de corriente total
+    Jty_level = Jty[encuentra_nodos(x,y,0,l)[1],:] # Perfil de la componente en y de la densidad de corriente total
+    Jper = Jtot[encuentra_nodos(x, y, 0,l)[1],:]
+    Jave = np.mean(Jper)
+    JJ = np.sqrt(Jtx_level**2 + Jty_level)
+    print(f"a mano es J={JJ*10**9} nA/m^2")
+    print(f"desde funcion es J={Jper*10**9} nA/m^2")
 
 
     ################ ALMACENAMIENTO DE DATOS ####################
-    def guarda_graficos(nombre, ruta, guarda=False):
-        if guarda:
-            # Asegúrate de que la carpeta existe
-            if not os.path.exists(ruta):
-                os.makedirs(ruta)
-            # Construye la ruta de forma segura
-            ruta_carpeta = os.path.join(ruta, f"{nombre}.png")
-            print(ruta_carpeta)
-            try:
-                plt.savefig(ruta_carpeta)
-                print(f"Imagen guardada en: {ruta_carpeta}")
-            except PermissionError:
-                print(f"No se pudo guardar el archivo en {ruta_carpeta}. Verifica permisos.")
-            except Exception as e:
-                print(f"Error al guardar la imagen: {e}")
+    
     
     # Lista gráficos
     def grafE(num, ruta, mostrar=False, guarda=False):
@@ -1871,7 +1976,7 @@ if __name__ == "__main__":
     def grafJ1(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
         #plt.plot(x[30:-30], Ji[30:-30]*(10**9))
-        plt.plot(x[30:-30], Jtot[encuentra_nodos(x, y, 0, l)[1],30:-30]*(10**9))
+        plt.plot(x[30:-30], Jtot[encuentra_nodos(x, y, 0, l)[1],30:-30]*(10**9))# perfil del módulo de ladensidad de corriente iónica total
         plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
         plt.ylabel(r'Densidad de corriente iónica ($nA/m^2$)',fontsize=11)
         plt.title(r'Magnitud de corriente iónica a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(viento_x), fontsize=13)
@@ -1892,7 +1997,8 @@ if __name__ == "__main__":
         plt.ylabel(r'Campo eléctrico (kV/m)',fontsize=11)
         plt.title(r'Componente $E_y$ campo eléctrico a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(viento_x), fontsize=13)
         plt.tight_layout()
-        plt.legend([f'$E_y$ = {str(np.round(np.mean(Edefy[encuentra_nodos(x, y, 0, l)[1],:]/1000),5))} kV'])
+        #plt.legend([f'$E_y$ = {str(np.round(np.mean(Edefy[encuentra_nodos(x, y, 0, l)[1],:]/1000),5))} kV'])
+        plt.legend([f'$|E|$ = {str(np.round(np.mean(np.abs(Edef[encuentra_nodos(x, y, 0, l)[1],:]/1000)),5))} kV/m'])
         plt.grid(True)
         guarda_graficos("Campo_nivel_piso", ruta, guarda=guarda)
         # Mostrar la figura si mostrar=True
@@ -2029,8 +2135,8 @@ if __name__ == "__main__":
         
     carpeta = f"modeloBIP_{Vol1/1000}_{cantidad}_{y_coor1}_{y_coor2}_{nodosx}_{nodosy}"
     ruta_destino = f"C:\\Users\\HITES\\Desktop\\la uwu\\14vo semestre\\Trabajo de título\\programa resultados\\{carpeta}"
-    Egraa = -Edefy[encuentra_nodos(x, y, 0, l)[1],:]/1000
-    Jgraa = Jtot[encuentra_nodos(x, y, 0, l)[1],:]*(10**9)
+    Egraa = -Edefy[encuentra_nodos(x, y, 0, l)[1],:]/1000 # en kV/m
+    Jgraa = Jtot[encuentra_nodos(x, y, 0, l)[1],:]*(10**9) # en nA/m^2
     guarda_en_carpeta(Vol1, y_coor1, y_coor2, nodosx, nodosy, x, Egraa, Jgraa, ruta_destino, guarda=guarda)
     show_plot(gra, ruta_destino, guarda=guarda)
 

@@ -1460,7 +1460,7 @@ secciones = {
     ],
     "Características ambientales": [
         ("Movilidad iónica (m2/kVs)", "0.15"),
-        ("Movilidad iónica 2 (m2/kVs)", "0.15"),
+        ("Movilidad iónica 2 (m2/kVs)", "0.2"),
         ("Temperatura (°C)", "25"),
         ("Altitud (m)", "100"),
         ("Viento x (m/s)", "0"),

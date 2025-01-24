@@ -1056,7 +1056,7 @@ if __name__ == "__main__":
     
     # Extraer parámetros necesarios
     #area = float(params["Área (mm²)"])
-    tipo, nombre, areas = params["Área (mm²)"]
+    tipo, nombre, areas = params["Conductor"]
     area =float(areas[0])
     diametro = float(areas[1])
     cantidad = int(params["Subconductores"])
