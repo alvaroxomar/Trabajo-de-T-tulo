@@ -676,13 +676,17 @@ if __name__ == "__main__":
     # Algoritmo iterativo para resolver rho
     # Em base a la malla de potencial V que exista,calcula rho donde los campos eléctricos 
     # son calculados en base a -\nabla V
-
+    def salir_prueba():
+        user_input = input("Escribe 's' para terminar: ")
+        if user_input.lower() == "s":
+            print("Saliendo del programa...")
+            sys.exit()
     ################################################################
     ################################################################
     def algoritmo_rho(sag, V, Evvs, Vcos, Vos, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='no',
                     rho_h=False, visu=15, muestra=False, fi=30, is_bundled = False, polo=["izq", "der"]):
         '''
-        Algoritmo principal de resolución del sistema de ecuaciones de la densidad de cara positiva y negativa
+        Algoritmo principal de resolución del sistema de ecuaciones de la densidad de carga positiva y negativa
         Comienza con la fijacion de la distribucion de rho- como valores nulos excepto en el conductor negativo
         Actuliza los valores de rho+ y una vez resuelto, actuliza los valores de rho- con rho+ fijo
         Entrega las partes reales de rho+, rho- y rho+-rho- 
@@ -701,7 +705,11 @@ if __name__ == "__main__":
         rhon_0= rhon_0.astype(complex)
         rhop_0 =impone_BC(rhop_0, rho_b, val1, px1, py1, in_condct=condi, copia=copia, polo=polo[0]) # rhop_0 sería una red con condición de borde unicamente en la posición del conductor
         rhon_0 =impone_BC(rhon_0, rho_b, val2, px2, py2, in_condct=condi, copia=copia, polo=polo[1]) # rhon_0 sería una red con condición de borde unicamente en la posición del conductor
-        print(f'el máximo de rho_p es: {rhop_0[(py1,px1)]}')
+        print(f'el valor en el centro del polo izquierdo es: {rhop_0[(py1,px1)]}')
+        print(f"los  valores que  se distribuyen alrededor del  conductor izquierdo es rs: {rhop_0[(py1+1,px1)]}, rn: {rhop_0[(py1-1,px1)]},"
+               f"re: {rhop_0[(py1,px1+1)]}, ro: {rhop_0[(py1,px1-1)]}")
+        print(f"los  valores que  se distribuyen alrededor del  conductor derecho es rs: {rhop_0[(py2+1,px2)]}, rn: {rhop_0[(py2-1,px2)]},"
+               f"re: {rhop_0[(py2,px2+1)]}, ro: {rhop_0[(py2,px2-1)]}")
         '''
         plt.figure(50)
         mesh = plt.pcolormesh(X, Y, np.real(rhop_0))
@@ -716,7 +724,12 @@ if __name__ == "__main__":
         plt.show()
         input("Presiona Enter para continuar...")
         '''
-        print(f'el mínimo de rho_n es: {rhon_0[(py2,px2)]}')
+        print(f'el valor en el centro del polo derecho es: {rhon_0[(py2,px2)]}')
+        print(f"los  valores que  se distribuyen alrededor del  conductor derecho es rs: {rhon_0[(py2+1,px2)]},"
+               f"rn: {rhon_0[(py2-1,px2)]}, re: {rhon_0[(py2,px2+1)]}, ro: {rhon_0[(py2,px2-1)]}")
+        print(f"los  valores que  se distribuyen alrededor del  conductor izquierdo es rs: {rhon_0[(py1+1,px1)]},"
+               f"rn: {rhon_0[(py1-1,px1)]}, re: {rhon_0[(py1,px1+1)]}, ro: {rhon_0[(py1,px1-1)]}")
+        #salir_prueba()
         if rho_h is not False:
             rhop_hist = [rhop_0.copy()]
             rhon_hist = [rhon_0.copy()]
@@ -1263,7 +1276,7 @@ if __name__ == "__main__":
         """Calcula el campo eléctrico, densidad de corriente y verifica la convergencia."""
         Vol_def = Vm + Vmi
         movp, movn = mov
-        Exxini, Eyyini, Eini =calcular_campo_electrico(Vmi, dx, dy, posicion_cond, Evvs, Vcos, Vos, kapzov_borde=False, bundle=False)
+        Exxini, Eyyini, Eini = calcular_campo_electrico(Vmi, dx, dy, posicion_cond, Evvs, Vcos, Vos, kapzov_borde=False, bundle=False)
         Edefx, Edefy, Edef = calcular_campo_electrico(Vol_def, dx, dy, posicion_cond, Evvs, Vcos, Vos, kapzov_borde=True, bundle=is_bundled)
         Ei = Edef[encuentra_nodos(x, y, 0, l)[1],  :] # Perfil Magnitud campo eléctrico nivel de piso medido a 1m
         #Jplus = rho_p*movp*np.sqrt((Edefx+(windx/movp))**2 + (Edefy+(windy/movp))**2)
@@ -1401,6 +1414,7 @@ if __name__ == "__main__":
             # Crear DataFrame principal (Campo Eléctrico y Corriente)
             data_principal = {
                 "Lateral Distance x[m]": distancias,
+                "Ey_nom [kV/m]": -Eyyini_nom/1000, # Ey_nom ya es un arreglo 1d con el perfil de la magnitud de campo eleçtrico medido a 1 m, está en kV/m
                 "E_y [kV/m]": campo_electrico,
                 "|E| [kV/m]": Ei/1000,  # Ei ya es un arreglo 1d con el perfil de la magnitud de campo eleçtrico medido a 1 m, está en kV/m
                 "J [nA/m^2]": densidad_corriente,
@@ -1579,9 +1593,10 @@ if __name__ == "__main__":
     mov2 = float(params["Movilidad iónica 2 (m2/kVs)"])/1000 # m2/Vs
     mov = [mov1, mov2]
     Rep = float(params["Recombinación (μm^3/s)"])*1e-6 # m^3/s
-    Tem = float(params["Temperatura (°C)"]) + 273 # kelvin
+    Tem = float(params["Temperatura (°C)"]) + 273.15 # kelvin
     altura = float(params["Altitud (m)"]) # m
     Pres = pressure_height(altura, Tem) # kPa
+    print(f"la presion en script  es {Pres}")
     viento_x = float(params["Viento x (m/s)"])
     viento_y = float(params["Viento y (m/s)"])
     modo = str(params["Modo (str)"])
@@ -1607,8 +1622,7 @@ if __name__ == "__main__":
     max_iter_rho = int(params["Max iter rho"])
     cond_rho = params["iteraciones rho"] # si es True, entonces la cantidad de iteraciones para rho es manual, si no, es automática
     #3print(f"cond rho es {cond_rho}")
-    if cond_rho:
-        max_it_rhos = [max_iter_rho]
+    
 
     max_iter = int(params["Max iter V"])
     it_global = int(params["Max iter Gob"])
@@ -1623,8 +1637,11 @@ if __name__ == "__main__":
     T0= 298.15  # (Kelvin) Temperatura de 25°C  + 273.15
     delta = Pres*T0/(P0*Tem) # () densidad del aire
     g0 = 29.8 # kV/cm
-    Evv1 = grad_sup(g0, m1, delta, Req1*100) # kV/cm
-    Evv2 = grad_sup(g0, m2, delta, Req2*100) # kV/cm
+    #print(f"Los datos para grad sup son m1 {m1}, delta {delta}, Req1 {Req1} cm")
+    Evv1 = grad_sup(g0, m1, delta, Req1) # kV/cm
+    #print(f"Evv1 es {Evv1} kV/cm")
+    Evv2 = grad_sup(g0, m2, delta, Req2) # kV/cm
+    #print(f"Evv2 es {Evv2} kV/cm")
     Evvs = [Evv1*10**5, Evv2*10**5] # V/m
     evv1 = Vol_crit(Evv1, y_coor1*100, Req*100) # kV
     evv2 = Vol_crit(Evv2, y_coor2*100, Req*100) # kV
@@ -1637,6 +1654,7 @@ if __name__ == "__main__":
     Vcos = [evv1*1000, evv2*1000] # V
     print(f"potencial critico corona polo  positivo es {evv1} kV y gradiente superficial critico es {Evv10} kV/cm")
     print(f"potencial critico corona polo  negativo es {evv2} kV y gradiente superficial critico es {Evv20} kV/cm")
+    #input("pausa mientras")
     fi = 30 # número de la ventana donde se muestra la evolución de la diferencia promedio y la desviación
     epsilon0 = (1 / (36 * np.pi)) * 10**(-9)  # (F/m) permitividad del vacío
     K = 1 / (2 * np.pi * epsilon0)  # factor de multiplicación
@@ -1667,6 +1685,8 @@ if __name__ == "__main__":
     print(f"Para nx={nodosx}, ny={nodosy} el número de iteraciones necesarias para alcanzar las esquinas desde px={posx_conductor1}, py={posy_conductor1} es de {n_iter_corner1}")
     n_iter_corner2 = num_iter_esquina(nodosx, nodosy, posx_conductor2 ,posy_conductor2)
     print(f"Para nx={nodosx}, ny={nodosy} el número de iteraciones necesarias para alcanzar las esquinas desde px={posx_conductor2}, py={posy_conductor2} es de {n_iter_corner2}")
+    if cond_rho:
+        max_it_rhos = [max_iter_rho]
     if not cond_rho:
         max_it_rhos = [n_iter_corner1, n_iter_corner2]
     sag1 = int(ma.copysign(1, Vol1))
@@ -1729,6 +1749,7 @@ if __name__ == "__main__":
                                                                                                                 Muestra=mostrar, fi=fi, is_bundled=is_bundled)
     Exxini, Eyyini, Em = Campo_ini
     Edefx, Edefy, Edef = Campo_fin
+    Eyyini_nom = Eyyini[encuentra_nodos(x,y,0,l)[1],:] # Perfil de la componente en y del campo eléctrico inicial
     # Promedio del perfil módulo densidad de corriente total a nivel de medición
     # Este solo es usado para la leyenda
     Jtx_level = Jtx[encuentra_nodos(x,y,0,l)[1],:] # Perfil de la componente en x de la densidad de corriente total
@@ -1983,6 +2004,18 @@ if __name__ == "__main__":
         plt.tight_layout()
         plt.legend([f'$J_p$ = {str(np.round(Jave*(10**9),3))} $nA/m^2$'])
         plt.grid(True)
+        ax1 = plt.gca()
+        if any(x<0 for x in Jtot[encuentra_nodos(x, y, 0, l)[1],30:-30]):
+            escala = [-Sy,Sy]
+        else:
+            escala = [0,Sy]
+        ax2 = ax1.twinx()
+        ax2.scatter(x_coor1, y_coor1, color='purple', marker='o', label="Polo izquierdo")  # Agregar el punto
+        ax2.scatter(x_coor2, y_coor2, color='purple', marker='o', label="Polo derecho")  # Agregar el punto
+        ax2.set_ylabel('Altura (m)', fontsize=11, color='purple')
+        ax2.tick_params(axis='y', labelcolor='purple')  # Ajustar el color de las etiquetas del eje secundario
+        ax2.set_ylim(escala[0], escala[1])  # Definir el rango de 0 a 20
+        ax2.legend(loc="upper right")
         guarda_graficos("Corriente_nivel_piso", ruta, guarda=guarda)
         # Mostrar la figura si mostrar=True
         if mostrar:
@@ -1993,6 +2026,7 @@ if __name__ == "__main__":
     def grafE1(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
         plt.plot(x[30:-30], -Edefy[encuentra_nodos(x, y, 0, l)[1],30:-30]/1000)
+        plt.plot(x_coor1, y_coor1)
         plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
         plt.ylabel(r'Campo eléctrico (kV/m)',fontsize=11)
         plt.title(r'Componente $E_y$ campo eléctrico a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(viento_x), fontsize=13)
@@ -2000,6 +2034,21 @@ if __name__ == "__main__":
         #plt.legend([f'$E_y$ = {str(np.round(np.mean(Edefy[encuentra_nodos(x, y, 0, l)[1],:]/1000),5))} kV'])
         plt.legend([f'$|E|$ = {str(np.round(np.mean(np.abs(Edef[encuentra_nodos(x, y, 0, l)[1],:]/1000)),5))} kV/m'])
         plt.grid(True)
+        ax1 = plt.gca()
+        if any(x<0 for x in -Edefy[encuentra_nodos(x, y, 0, l)[1],30:-30]):
+            escala = [-Sy,Sy]
+        else:
+            escala = [0,Sy]
+        ax2 = ax1.twinx()
+        ax2.scatter(x_coor1, y_coor1, color='purple', marker='o', label="Polo izquierdo")  # Agregar el punto
+        ax2.scatter(x_coor2, y_coor2, color='purple', marker='o', label="Polo derecho")  # Agregar el punto
+        ax2.set_ylabel('Altura (m)', fontsize=11, color='purple')
+        ax2.tick_params(axis='y', labelcolor='purple')  # Ajustar el color de las etiquetas del eje secundario
+        ax2.set_ylim(escala[0], escala[1])  # Definir el rango de 0 a 20
+        ax2.legend(loc="upper right")
+    
+        plt.tight_layout()
+        plt.legend(True)
         guarda_graficos("Campo_nivel_piso", ruta, guarda=guarda)
         # Mostrar la figura si mostrar=True
         if mostrar:

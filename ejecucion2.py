@@ -720,6 +720,7 @@ def verificar_corona(alturas, radios, hay_fasciculos=False):
     #print(f"el radio2 es {radios[1]}")
     #print(f"la altura1 es {alturas[0]}")
     delta = param_corona()
+    #print(f"el delta de  ejecucion2 es {delta}")
     s = float(entradas["Separación (cm)"].get())
     if s > 0:
         print(f"la separacion de los subconductores es {s}")
@@ -789,6 +790,7 @@ def param_corona():
     altura = float(entradas["Altitud (m)"].get()) # m
     Tem = float(entradas["Temperatura (°C)"].get()) + 273.15 # Kelvin
     Pres = pressure_height(altura, Tem)  # kPa
+    #print(f"la presion en ejecucion2 es {Pres}")
     delta = Pres * T0 / (P0 * Tem)  # Densidad del aire
     return delta
     
