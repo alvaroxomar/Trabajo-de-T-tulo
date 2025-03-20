@@ -4,16 +4,28 @@ import numpy as np
 import os
 print("**********************************")
 plt.close("all")
+bip  = False
+wind =False
+resp = input("Es unipolar o bipolar? (u/b)")
+if resp == "b":
+    bip=  True
+if resp == "u":
+    bip = False
+resp2 =input("Existe viento? (s/n)")
+if resp2 == "s":
+    wind = True
+if resp2 == "n":
+    wind= False
 def formatear_numero(valor):
     if np.abs(valor) < 1e-2 or np.abs(valor) > 1e3:
         return f"{valor:.2e}"  # Notación científica para valores extremos
     else:
         return f"{valor:.2f}"  # Notación decimal con 4 decimales
 # Lista de archivos Excel
-nome1 = r"modeloBIP_800.0_8.0_8.0_524_524.xlsx"
-nome2 = r"modeloBIP_800.0_10.0_10.0_524_524.xlsx"
-nome3 = r"modeloBIP_800.0_12.0_12.0_524_524.xlsx"
-nome4 = r"modeloBIP_700.0_10.0_10.0_672_517.xlsx"
+nome1 = r"modelo_600.0_10.0_346_174.xlsx"
+nome2 = r"modelo_600.0_10.0_346_174.xlsx"
+nome3 = r"modelo_600.0_10.0_346_174.xlsx"
+nome4 = r"modelo_600.0_10.0_346_174.xlsx"
 nome = r"modeloBIP_650.0_9.0_9.0_607_607.xlsx"
 dir1 = f'C:\\Users\\HITES\\Desktop\\la uwu\\14vo semestre\\Trabajo de título\\programa resultados\\modeloBIP_800.0_3_8.0_8.0_524_524\\{nome1}'
 dir2 = f'C:\\Users\\HITES\\Desktop\\la uwu\\14vo semestre\\Trabajo de título\\programa resultados\\modeloBIP_800.0_3_10.0_10.0_524_524\\{nome2}'
@@ -41,17 +53,17 @@ def ajustar_ruta(ruta, nombre_archivo):
     # Reemplazar las barras invertidas por doble barra invertida
     #return ruta_completa.replace("\\", "\\\\")
     return ruta_completa
-ruta = r"C:\Users\HITES\Desktop\la uwu\14vo semestre\Trabajo de título\programa resultados\modeloBIP_500.0_3_9.0_9.0_733_611\Resultados"
-ruta2 = r"C:\Users\HITES\Desktop\la uwu\14vo semestre\Trabajo de título\programa resultados\modeloBIP_500.0_3_9.0_9.0_733_611\Resultados_new"
-ruta3 = r"C:\Users\HITES\Desktop\la uwu\14vo semestre\Trabajo de título\programa resultados\modeloBIP_500.0_3_9.0_9.0_733_611\Resultados_new_new"
-ruta4 = r"C:\Users\HITES\Desktop\la uwu\14vo semestre\Trabajo de título\programa resultados\modeloBIP_500.0_3_9.0_9.0_733_611\Resultados_new_new_new"
-nome = r"modeloBIP_500.0_9.0_9.0_733_611.xlsx"
-#nomes = [nome, nome2, nome3]
-nomes = nome
+ruta4 = r"C:\Users\HITES\Desktop\la uwu\14vo semestre\Trabajo de título\programa resultados\modelo_600.0_4_10.0_346_174\Resultados_new_new_new"
+ruta = r"C:\Users\HITES\Desktop\la uwu\14vo semestre\Trabajo de título\programa resultados\modelo_600.0_4_10.0_346_174\Resultados"
+ruta2 = r"C:\Users\HITES\Desktop\la uwu\14vo semestre\Trabajo de título\programa resultados\modelo_600.0_4_10.0_346_174\Resultados_new"
+ruta3 = r"C:\Users\HITES\Desktop\la uwu\14vo semestre\Trabajo de título\programa resultados\modelo_600.0_4_10.0_346_174\Resultados_new_new"
+nome = r"modelo_600.0_7.0_228_115.xlsx"
+nomes = [nome1, nome2, nome3,nome4]
+#nomes = nome
 rutas = [ruta, ruta2, ruta3, ruta4]
 archivos_excel = []
 for i in range(len(rutas)):
-    dir = ajustar_ruta(rutas[i], nomes)
+    dir = ajustar_ruta(rutas[i], nomes[i])
     archivos_excel.append(dir)
 
 print(archivos_excel)
@@ -84,14 +96,18 @@ for idx, archivo in enumerate(archivos_excel):
     dic_conductores = extraer_diccionario_hoja(archivo, "Conductores")
     dic_ambientales = extraer_diccionario_hoja(archivo, "Ambientales")
     pos_y = dic_conductores.get("Posición en y (m)", ["N/A"])[0] if dic_conductores else "N/A"
-    Esup_izq = dic_conductores.get("Gradiente superficial crítico izq (kV/cm)", ["N/A"])[0] if dic_conductores else "N/A"
-    Esup_der = dic_conductores.get("Gradiente superficial crítico der (kV/cm)", ["N/A"])[0] if dic_conductores else "N/A"
-    supe.append(Esup_der)
+    if bip:
+        Esup_izq = dic_conductores.get("Gradiente superficial crítico izq (kV/cm)", ["N/A"])[0] if dic_conductores else "N/A"
+        Esup_der = dic_conductores.get("Gradiente superficial crítico der (kV/cm)", ["N/A"])[0] if dic_conductores else "N/A"
+        supe.append(Esup_der)
+    else:
+        Esup = dic_conductores.get("Gradiente superficial crítico (kV/cm)", ["N/A"])[0] if dic_conductores else "N/A"
+        supe.append(Esup)
     Wx = dic_ambientales.get("Viento x (m/s)", ["N/A"])[0] if dic_ambientales else "N/A"
     Wy = dic_ambientales.get("Viento y (m/s)", ["N/A"])[0] if dic_ambientales else "N/A"
     alpha = dic_ambientales.get("Rugosidad terreno", ["N/A"])[0] if dic_ambientales else "N/A"
     if idx==0:
-        plt.title(f"Campo eléctrico vs Posición, "+r"$E_{on}$"f" = {formatear_numero(supe[0])}", fontsize=15)
+        plt.title(f"Campo eléctrico vs Posición, "+r"$E_{on}$"f" = {formatear_numero(supe[0])} kV/cm", fontsize=15)
     if "Campo y Corriente" in hojas:
         df = hojas["Campo y Corriente"]
         if {"Lateral Distance x[m]", "E_y [kV/m]"}.issubset(df.columns):
@@ -99,10 +115,12 @@ for idx, archivo in enumerate(archivos_excel):
             campo_electrico = df["E_y [kV/m]"].dropna()
             Eprom = df["|E| [kV/m]"].dropna()
             Eav = np.mean(Eprom)
-            #plt.plot(distancia[15:-15], campo_electrico[15:-15], label=f" altura = {pos_y} m"+r" , $|E|_{ave}$="f"{formatear_numero(np.mean(Eprom[15:-15]))} kV/m,"+r" $E_{on}$ = "+f"{formatear_numero(supe[idx])} kV/cm",
-            #         color=colores[idx], marker=marcadores[idx], linestyle='-', linewidth=1, markersize=5, markevery=10)
-            plt.plot(distancia[15:-15], campo_electrico[15:-15], label=f"Wx = {Wx} m/s"+r" , $|E|_{ave}$="f"{formatear_numero(np.mean(Eprom[15:-15]))} kV/m",
-                     color=colores[idx], marker=marcadores[idx], linestyle='-', linewidth=1, markersize=5, markevery=10)
+            if wind:
+                plt.plot(distancia[15:-15], Eprom[15:-15], label=f"Wx = {Wx} m/s"+r" , $|E|_{ave}$="f"{formatear_numero(np.mean(Eprom[15:-15]))} kV/m",
+                        color=colores[idx], marker=marcadores[idx], linestyle='-', linewidth=1, markersize=5, markevery=10)
+            else:
+                plt.plot(distancia[15:-15], campo_electrico[15:-15], label=f" altura = {pos_y} m"+r" , $|E|_{ave}$="f"{formatear_numero(np.mean(Eprom[15:-15]))} kV/m,"+r" $E_{on}$ = "+f"{formatear_numero(supe[idx])} kV/cm",
+                         color=colores[idx], marker=marcadores[idx], linestyle='-', linewidth=1, markersize=5, markevery=10)
             '''
             if idx == len(archivos_excel)-1:
                 df2 = pd.read_excel(archivo, sheet_name='Conductores')
@@ -142,26 +160,45 @@ print(f"los gradientes sup son {supe}")
 limite = np.ones(len(distancia)) * 25
 plt.plot(distancia, limite, color='red', label="Límite CIGRE 25 kV/m")
 plt.legend(loc="lower left", fontsize=10)
-df2 = pd.read_excel(archivo, sheet_name='Conductores')
-columnas_a_extraer_2 = ['Posición en x (m)', 'Posición en y (m)', 'Posición en x 2(m)', 'Posición en y 2(m)']
-df2 = df2[columnas_a_extraer_2]
-df3 = pd.read_excel(archivo, sheet_name='Dim y discr')
-columnas_a_extraer_3 = ['Altura (m)']
-ymax_ax = float(df3[columnas_a_extraer_3].iloc[0])
-print(f"ymax es {ymax_ax}")
-if any(x < 0 for x in campo_electrico):
-    escala = [-ymax_ax, ymax_ax]
-else:
-    escala = [0, ymax_ax]
-x1 = df2['Posición en x (m)'].iloc[0]
-y1 = df2['Posición en y (m)'].iloc[0]
-x2 = df2['Posición en x 2(m)'].iloc[0]
-y2 = df2['Posición en y 2(m)'].iloc[0]
-plt.legend(loc="lower left")
-ax1 = plt.gca()
-ax2 = ax1.twinx()
-ax2.scatter(x1, y1, color='purple', marker='o', label=f"Polos altura {pos_y} m")  # Agregar el punto
-ax2.scatter(x2, y2, color='purple', marker='o')  # Agregar el punto
+
+for idx, archivo in enumerate(archivos_excel):
+    df2 = pd.read_excel(archivo, sheet_name='Conductores')
+    dic_conductores = extraer_diccionario_hoja(archivo, "Conductores")
+    pos_y = dic_conductores.get("Posición en y (m)", ["N/A"])[0] if dic_conductores else "N/A"
+    if bip:
+        columnas_a_extraer_2 = ['Posición en x (m)', 'Posición en y (m)', 'Posición en x 2(m)', 'Posición en y 2(m)', 'Voltaje (kV)', 'Voltaje 2(kV)']
+    else:
+        columnas_a_extraer_2 = ['Posición en x (m)', 'Posición en y (m)','Voltaje (kV)',]
+    df2 = df2[columnas_a_extraer_2]
+    df3 = pd.read_excel(archivo, sheet_name='Dim y discr')
+    columnas_a_extraer_3 = ['Altura (m)']
+    ymax_ax = float(df3[columnas_a_extraer_3].iloc[0])
+    print(f"ymax es {ymax_ax}")
+    if any(x < 0 for x in campo_electrico):
+        escala = [-ymax_ax, ymax_ax]
+    else:
+        escala = [0, ymax_ax]
+    x1 = df2['Posición en x (m)'].iloc[0]
+    y1 = df2['Posición en y (m)'].iloc[0]
+    voltaj = df2['Voltaje (kV)'].iloc[0]
+    if bip:
+        x2 = df2['Posición en x 2(m)'].iloc[0]
+        y2 = df2['Posición en y 2(m)'].iloc[0]
+        voltaj2 = df2['Voltaje 2(kV)'].iloc[0]
+    plt.legend(loc="lower left")
+    if idx == 0:
+        ax1 = plt.gca()
+        ax2 = ax1.twinx()
+    if bip:
+        ax2.scatter(x1, y1, color=colores[idx], marker='o', label=f"Polos altura {pos_y} m,"+r"$\pm$"f"{formatear_numero(voltaj)} kV")  # Agregar el punto
+        ax2.scatter(x2, y2, color=colores[idx], marker='o')  # Agregar el punto
+    else:
+        if wind:
+            ax2.scatter(x1, y1, color="#C83232CC", marker='o', label=f"Polos altura {pos_y} m, {formatear_numero(voltaj)} kV")  # Agregar el punto
+        else:
+            ax2.scatter(x1, y1, color=colores[idx], marker='o', label=f"Polos altura {pos_y} m, {formatear_numero(voltaj)} kV")  # Agregar el punto
+    if wind and idx==0:
+        break
 ax2.set_ylabel('Altura (m)', fontsize=11, color='purple')
 ax2.tick_params(axis='y', labelcolor='purple')  # Ajustar el color de las etiquetas del eje secundario
 ax2.set_ylim(escala[0], escala[1])  # Definir el rango de 0 a 20
@@ -185,7 +222,7 @@ for idx, archivo in enumerate(archivos_excel):
     #Wy = dic_ambientales.get("Viento y (m/s)", ["N/A"])[0] if dic_ambientales else "N/A"
     #alpha = dic_ambientales.get("Rugosidad terreno", ["N/A"])[0] if dic_ambientales else "N/A"
     if idx==0:
-        plt.title(f"Densidad de Corriente vs Posición, "+r"$E_{on}$"f" = {formatear_numero(supe[0])}", fontsize=15)
+        plt.title(f"Densidad de Corriente vs Posición, "+r"$E_{on}$"f" = {formatear_numero(supe[0])} kV/cm", fontsize=15)
     if "Campo y Corriente" in hojas:
         df = hojas["Campo y Corriente"]
         if {"Lateral Distance x[m]", "J [nA/m^2]"}.issubset(df.columns):
@@ -194,13 +231,16 @@ for idx, archivo in enumerate(archivos_excel):
             Jx = df["Jx [nA/m^2]"].dropna()
             Jy = df["Jy [nA/m^2]"].dropna()
             Jav = np.mean(corriente)
-            
-            #plt.plot(distancia[15:-15], -Jy[15:-15], label=f"Wx = {Wx} m/s,"
-            #         +r" $J_{y,ave}$="f"{formatear_numero(np.mean(-Jy[15:-15]))}"+r" $nA/m^2$",
+            if wind:
+                plt.plot(distancia[15:-15], -Jy[15:-15], label=f"Wx = {Wx} m/s,"
+                        +r" $J_{y,ave}$="f"{formatear_numero(np.mean(-Jy[15:-15]))}"+r" $nA/m^2$",
+                        color=colores[idx], marker=marcadores[idx], linestyle='-', linewidth=1, markersize=5, markevery=10)
+            else:
+                plt.plot(distancia[15:-15], corriente[15:-15], label=f" altura = {pos_y} m"+r" , $|J|_{ave}$="f"{formatear_numero(np.mean(corriente[15:-15]))}"+r" $nA/m^2$",
+                        color=colores[idx], marker=marcadores[idx], linestyle='-', linewidth=1, markersize=5, markevery=10)
+            #plt.plot(distancia[15:-15], corriente[15:-15], label=f"Wx = {Wx} m/s,"
+            #         +r" $|J|_{ave}$="f"{formatear_numero(np.mean(corriente[15:-15]))}"+r" $nA/m^2$",
             #         color=colores[idx], marker=marcadores[idx], linestyle='-', linewidth=1, markersize=5, markevery=10)
-            plt.plot(distancia[15:-15], corriente[15:-15], label=f"Wx = {Wx} m/s,"
-                     +r" $|J|_{ave}$="f"{formatear_numero(np.mean(corriente[15:-15]))}"+r" $nA/m^2$",
-                     color=colores[idx], marker=marcadores[idx], linestyle='-', linewidth=1, markersize=5, markevery=10)
             #plt.plot(distancia, Jx, label=f"Componente x de $J$ nA/$m^2$",
             #         color=colores_pastel[idx], marker='*', linestyle='-', linewidth=1, markersize=5)
             #plt.plot(distancia, Jy, label=f"Componente y de $J$ nA/$m^2$",
@@ -214,26 +254,44 @@ for idx, archivo in enumerate(archivos_excel):
 limiteC = np.ones(len(distancia)) * 100
 plt.plot(distancia, limiteC, color='red', label=f"Límite CIGRE 100 nA/$m^{2}$")
 plt.legend(loc="upper left", fontsize=10)
-df2 = pd.read_excel(archivo, sheet_name='Conductores')
-columnas_a_extraer_2 = ['Posición en x (m)', 'Posición en y (m)', 'Posición en x 2(m)', 'Posición en y 2(m)']
-df2 = df2[columnas_a_extraer_2]
-df3 = pd.read_excel(archivo, sheet_name='Dim y discr')
-columnas_a_extraer_3 = ['Altura (m)']
-ymax_ax = float(df3[columnas_a_extraer_3].iloc[0])
-print(f"ymax es {ymax_ax}")
-if any(x < 0 for x in campo_electrico):
-    escala = [-ymax_ax, ymax_ax]
-else:
-    escala = [0, ymax_ax]
-x1 = df2['Posición en x (m)'].iloc[0]
-y1 = df2['Posición en y (m)'].iloc[0]
-x2 = df2['Posición en x 2(m)'].iloc[0]
-y2 = df2['Posición en y 2(m)'].iloc[0]
-plt.legend(loc="lower left")
-ax1 = plt.gca()
-ax2 = ax1.twinx()
-ax2.scatter(x1, y1, color='purple', marker='o', label=f"Polos altura {pos_y} m")  # Agregar el punto
-ax2.scatter(x2, y2, color='purple', marker='o')  # Agregar el punto
+for idx, archivo in enumerate(archivos_excel):
+    df2 = pd.read_excel(archivo, sheet_name='Conductores')
+    dic_conductores = extraer_diccionario_hoja(archivo, "Conductores")
+    pos_y = dic_conductores.get("Posición en y (m)", ["N/A"])[0] if dic_conductores else "N/A"
+    if bip:
+        columnas_a_extraer_2 = ['Posición en x (m)', 'Posición en y (m)', 'Posición en x 2(m)', 'Posición en y 2(m)', 'Voltaje (kV)', 'Voltaje 2(kV)']
+    else:
+        columnas_a_extraer_2 = ['Posición en x (m)', 'Posición en y (m)', 'Voltaje (kV)']
+    df2 = df2[columnas_a_extraer_2]
+    df3 = pd.read_excel(archivo, sheet_name='Dim y discr')
+    columnas_a_extraer_3 = ['Altura (m)']
+    ymax_ax = float(df3[columnas_a_extraer_3].iloc[0])
+    print(f"ymax es {ymax_ax}")
+    if any(x < 0 for x in campo_electrico):
+        escala = [-ymax_ax, ymax_ax]
+    else:
+        escala = [0, ymax_ax]
+    x1 = df2['Posición en x (m)'].iloc[0]
+    y1 = df2['Posición en y (m)'].iloc[0]
+    voltaj = df2['Voltaje (kV)'].iloc[0]
+    if bip:
+        x2 = df2['Posición en x 2(m)'].iloc[0]
+        y2 = df2['Posición en y 2(m)'].iloc[0]
+        voltaj2 = df2['Voltaje 2(kV)'].iloc[0]
+    plt.legend(loc="lower left")
+    if idx == 0:
+        ax1 = plt.gca()
+        ax2 = ax1.twinx()
+    if bip:
+        ax2.scatter(x1, y1, color=colores[idx], marker='o', label=f"Polos altura {pos_y} m,"+r"$\pm$"f"{formatear_numero(voltaj)} kV")  # Agregar el punto
+        ax2.scatter(x2, y2, color=colores[idx], marker='o')  # Agregar el punto
+    else:
+        if wind:
+            ax2.scatter(x1, y1, color="#C83232CC", marker='o', label=f"Polos altura {pos_y} m, {formatear_numero(voltaj)} kV")  # Agregar el punto
+        else:
+            ax2.scatter(x1, y1, color=colores[idx], marker='o', label=f"Polos altura {pos_y} m, {formatear_numero(voltaj)} kV")  # Agregar el punto
+    if wind and idx==0:
+        break
 ax2.set_ylabel('Altura (m)', fontsize=11, color='purple')
 ax2.tick_params(axis='y', labelcolor='purple')  # Ajustar el color de las etiquetas del eje secundario
 ax2.set_ylim(escala[0], escala[1])  # Definir el rango de 0 a 20
