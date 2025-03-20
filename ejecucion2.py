@@ -373,6 +373,7 @@ def activar_bipolar():
 def activar_desarrollador():
     if boton_desarrollador_var.get():
         boton_auto_red.config(state="normal")
+        boton_ecri.config(state="disabled")
         entradas["Max iter rho"].config(state="normal")
         entradas["Max iter V"].config(state="normal")
         entradas["Max iter Gob"].config(state="normal")
@@ -395,6 +396,7 @@ def activar_desarrollador():
         entradas["iteraciones rho"]=True
     else:
         boton_auto_red.config(state="disabled")
+        boton_ecri.config(state="normal")
         entradas["Max iter rho"].config(state="disabled")
         entradas["Max iter V"].config(state="disabled")
         entradas["Max iter Gob"].config(state="disabled")
@@ -590,7 +592,7 @@ def validar_campos_y_ejecutar():
     radios =  []
     for nombre, entrada in entradas.items():
         #print(f"la entrada es {entrada}")
-        if nombre == "Separación (m)" and cantidad <= 1:
+        if nombre == "Separación (cm)" and cantidad <= 1:
            continue  # Ignorar esta casilla
         elif nombre == "Subconductores":
             continue
@@ -625,6 +627,8 @@ def validar_campos_y_ejecutar():
         elif nombre == "Onset corona 2 (kV)":
             continue
         elif nombre == "Corona gradient 2 (kV/cm)":
+            continue
+        elif nombre == "Ecri":
             continue
         elif nombre == "Posición en y (m)":
             y1 = float(entradas[nombre].get())
@@ -805,13 +809,16 @@ def calcula_corona(Sep, r, delta, m, g0, vol, num='1', fasciculado=False):
     r en cm
     g0 en kV/cm
     '''
-    Ev= grad_sup(g0, m, delta, r)
-    ev = Vol_crit(Ev, Sep, r)
+    Ev0= grad_sup(g0, m, delta, r)
+    ev = Vol_crit(Ev0, Sep, r)
+    Sep = ajuste_ev(Sep)
     if fasciculado:
-       Ev *=ajustar_gradiente(np.abs(vol), ev)
-    entradas[f"Onset corona {num} (kV)"] = ev
+       Ev = Ev0 * ajustar_gradiente(np.abs(vol), ev)
+    eva = Vol_crit(Ev, Sep, r)
+    entradas[f"Onset corona {num} (kV)"] = eva
     entradas[f"Corona gradient {num} (kV/cm)"] = Ev
-    return ev, Ev
+    print(f"el onset corona ajustado {num} es {eva} kV y {ev} kV y el gradiente es {Ev0} kV/cm y con ajuste es {Ev}")
+    return eva, Ev
 
 # Inicialización global de canvas
 canvas = None
@@ -1011,7 +1018,7 @@ def generar_poligono(n_lados, radio, centro_x=0, centro_y=0):
 
 def verificar_estado_area():
     # Actualizar el estado de la variable global estado_area
-    # También actuliza los estados de area1 y area2
+    # También actualiza los estados de area1 y area2
     global estado_area
     
     error = verificar_selecciones()
@@ -1024,6 +1031,7 @@ def verificar_estado_area():
     datos_conductor = next(
         (x[1:] for x in opciones_subcon[tipo] if x[0] == nombre_con), None
     )
+    #obtiene el área y el radio del subconductor
     if datos_conductor:
         # Crear o actualizar el área en el diccionario `entradas`
         entradas["Conductor"] = [tipo, nombre_con, list(datos_conductor)]
@@ -1464,7 +1472,7 @@ secciones = {
         ("Movilidad iónica (m2/kVs)", "0.15"),
         ("Movilidad iónica 2 (m2/kVs)", "0.2"),
         ("Temperatura (°C)", "25"),
-        ("Altitud (m)", "100"),
+        ("Altitud (m)", "1000"),
         ("Viento x (m/s)", "0"),
         ("Viento y (m/s)", "0"),
         ("Modo (str)", "uniforme"),
@@ -1728,8 +1736,8 @@ marco_dimensionamiento.grid(row=0, column=0, padx=5, pady=(0, 2), sticky="w")  #
 ttk.Label(marco_dimensionamiento, text="Dimensionamiento & Discretización", background="lightgreen", font=fuente_titulo).grid(row=0, column=0, columnspan=2, sticky="w")
 
 campos_dimensionamiento = [
-    ("Ancho (m)", "5"),
-    ("Altura (m)", "10"),
+    ("Ancho (m)", "20"),
+    ("Altura (m)", "20"),
     ("nodos x", "100"),
     ("nodos y", "100"),
     ("Medición (m)", "1")
@@ -1872,12 +1880,168 @@ boton_graficar = ttk.Button(marco_botones, text="Graficar", command=validar_camp
 boton_graficar.grid(row=0, column=2, padx=5)
 boton_ejecutar = ttk.Button(marco_botones, text="Ejecutar", command=validar_campos_y_ejecutar, width=ancho_botones)
 boton_ejecutar.grid(row=0, column=3, padx=5)
-boton_salir = ttk.Button(marco_botones, text="Salir", command=cerrar_programa, width=ancho_botones)
-boton_salir.grid(row=0, column=4, padx=5)
+#boton_salir = ttk.Button(marco_botones, text="Salir", command=cerrar_programa, width=ancho_botones)
+#boton_salir.grid(row=0, column=4, padx=5)
 
 # Protocolo de cierre
 ventana.protocol("WM_DELETE_WINDOW", cerrar_programa)
 
+def abrir_ventana_ecri():
+    """Controla la apertura y cierre de la ventana de Ecri según el estado del checkbox."""
+    global ventana_ecri
+    print("------------------")
+    if boton_ecri_var.get():  # Si el checkbox está activado
+        if "ventana_ecri" in globals() and ventana_ecri.winfo_exists():
+            return  # Si la ventana ya está abierta, no se crea otra
+
+        ventana_ecri = tk.Toplevel(ventana)
+        ventana_ecri.title("Ingrese valor")
+        ventana_ecri.geometry("350x150")
+        ventana_ecri.protocol("WM_DELETE_WINDOW", lambda: boton_ecri_var.set(False))  # Si se cierra manualmente, desactivar checkbox
+
+        tk.Label(ventana_ecri, text="Ingrese valor del gradiente superficial crítico corona (kV/cm):").pack(pady=10)
+
+        entrada_valor = tk.Entry(ventana_ecri)
+        entrada_valor.pack(pady=5)
+
+        def aceptar():
+            valor = entrada_valor.get()
+            
+            try:
+                valor_float = float(valor)
+                entradas["Ecri"] = valor_float
+                messagebox.showinfo("Valor ingresado", f"Se ingresó gradiente superficial crítico: {valor_float} kV/cm")
+                calcular_m()  # Recalcula "m" automáticamente
+
+                # Deshabilita la casilla de "m"
+                entradas["Estado sup cond 1"].config(state="disabled")
+                if boton_bipolar_var.get():
+                    entradas["Estado sup cond 2"].config(state="disabled")
+
+            except ValueError:
+                messagebox.showwarning("Error", "Por favor, ingrese un número válido.")
+
+        boton_aceptar = ttk.Button(ventana_ecri, text="Aceptar", command=aceptar)
+        boton_aceptar.pack(pady=10)
+
+        # Deshabilita la casilla de "m"
+        entradas["Estado sup cond 1"].config(state="disabled")
+        if boton_bipolar_var.get():
+            entradas["Estado sup cond 2"].config(state="disabled")
+
+    else:  # Si el checkbox se desactiva
+        if "ventana_ecri" in globals() and ventana_ecri.winfo_exists():
+            ventana_ecri.destroy()  # Cierra la ventana si existe
+
+        # Habilita la casilla de "m" para edición manual
+        entradas["Estado sup cond 1"].config(state="normal")
+        entradas["Estado sup cond 1"].delete(0, tk.END)
+        entradas["Estado sup cond 1"].insert(0, "1")  # Valor por defecto
+        if boton_bipolar_var.get():
+            entradas["Estado sup cond 2"].config(state="normal")
+            entradas["Estado sup cond 2"].delete(0, tk.END)
+            entradas["Estado sup cond 2"].insert(0, "1")  # Valor por defecto
+
+
+def calculo_de_m(Ec,  delt, rad):
+    return Ec/(g0*delt*(1+0.301/np.sqrt(delt*rad)))
+
+def obtener_parametros_m():
+    """Obtiene y valida los parámetros necesarios para calcular 'm'."""
+    global estado_area
+    try:
+        sep = float(entradas["Separación (cm)"].get()) # en cm
+        #print(f"La separación de los sub es: {sep} cm")
+    except ValueError:
+        messagebox.showwarning("Error", "Ingrese valores numéricos válidos en Separación.")
+        return None
+    try:
+        '''
+        if boton_bipolar_var.get():
+            ancho2 = float(entradas["Posición en x 2 (m)"].get())*100 # en cm
+            ancho1 = float(entradas["Posición en x (m)"].get())*100 # en cm
+            #dist = np.abs(ancho1-ancho2)
+            dist = np.abs(ancho2)
+        else:
+            dist = float(entradas["Posición en y (m)"].get())*100 # en cm'
+        '''
+        dist = float(entradas["Posición en y (m)"].get())*100 # en cm
+    except ValueError:
+        messagebox.showwarning("Error", "Ingrese valores numéricos válidos en Posición y.")
+        return None
+
+    try:
+        cantidad = int(entrada_cantidad.get())
+        volta = float(entradas["Voltaje (kV)"].get())
+        #print(f"el voltaje  es {volta} kV")
+    except ValueError:
+        messagebox.showwarning("Error", "Ingrese valores numéricos válidos en Cantidad y Voltaje.")
+        return None
+
+    if estado_area:
+        radio = extrae_radios(cantidad, sep)
+    else:
+        verificar_estado_area()
+        radio = extrae_radios(cantidad, sep)
+    #print(f"El radio es {radio[0]*100} cm")
+    estado_area = False
+    delta = param_corona()
+    ecri = entradas.get("Ecri", None)
+    #print(f"El valor de Ecri es {ecri} kV/cm")
+    return sep, cantidad, volta, radio, delta, ecri, dist
+
+
+def ajuste_ev(dis):
+        # dis en cm
+        # devuelve en cm
+        return dis/(1.9287+1.1072*(dis/100))
+
+def calcular_m():
+    """Calcula el valor de 'm' usando los parámetros obtenidos."""
+    parametros = obtener_parametros_m()
+    if parametros is None:
+        return  # No continuar si hubo errores en la obtención de parámetros
+
+    sep, cantidad, volta, radio, delta, ecri, dist = parametros
+    if sep > 0:
+        # Hay fasciculos
+        alpha, beta, c = 1.1339, -0.1678, 0.03
+
+        f = volta * beta / (radio[0] * 100 * np.log(dist / (radio[0] * 100))) - ecri
+        mu = c * (volta / (radio[0] * 100 * np.log(dist / (radio[0] * 100)))) ** 2
+        d = f ** 2 - 4 * alpha * mu
+
+        if d < 0:
+            messagebox.showwarning("Error", f"No es posible calcular 'm' con los valores ingresados. El discriminante es {d}")
+            return
+
+        ecri01 = (-f + np.sqrt(d)) / (2 * alpha)
+        ecri02 = (-f - np.sqrt(d)) / (2 * alpha)
+        ecri0 =  max(ecri01, ecri02)
+    else:
+        ecri0 = ecri
+    radio_eq = radio[0]*100 # en cm
+    dist_ajustado = ajuste_ev(dist)
+    ev = Vol_crit(ecri, dist_ajustado, radio_eq)
+    print(f"Radio equivalente es {radio[0]*100} cm, distancia S es {dist/100} m, ev es {ev} kV, vol es {volta} kV y Ecri0 es {ecri0} kV/cm y Ecri es {ecri} kV/cm")
+
+    if ecri is not None and radio is not None and delta is not None:
+        m_valor = calculo_de_m(ecri0, delta, radio[0] * 100)
+        #print(f"Se calcula automáticamente el valor de 'm': {m_valor}")
+
+        entradas["Estado sup cond 1"].config(state="normal")
+        entradas["Estado sup cond 1"].delete(0, tk.END)
+        entradas["Estado sup cond 1"].insert(0, f"{m_valor:.4f}")
+        entradas["Estado sup cond 1"].config(state="disabled")
+        if boton_bipolar_var.get():
+            entradas["Estado sup cond 2"].config(state="normal")
+            entradas["Estado sup cond 2"].delete(0, tk.END)
+            entradas["Estado sup cond 2"].insert(0, f"{m_valor:.4f}")
+            entradas["Estado sup cond 2"].config(state="disabled")
+    else:
+        entradas["Estado sup cond 1"].config(state="normal")
+        if boton_bipolar_var.get():
+            entradas["Estado sup cond 2"].config(state="normal")
 
 
 # Crear el botón Bipolar inmediatamente a la derecha
@@ -1895,6 +2059,14 @@ boton_auto_red.config(state="disabled")
 boton_desarrollador_var = tk.BooleanVar()  # Variable para controlar el estado del botón
 boton_desarrollador = ttk.Checkbutton(marco_botones, text="Desarrollador", variable=boton_desarrollador_var, command=activar_desarrollador)
 boton_desarrollador.grid(row=0, column=7, padx=5, pady=10)  # Ubicado justo al lado del Bipolar
+
+# Botón "Ecri" (se deshabilita cuando se activa "Desarrollador")
+boton_ecri_var = tk.BooleanVar()  # Variable para controlar el estado del botón
+boton_ecri = ttk.Checkbutton(marco_botones, text="Ecri", variable=boton_ecri_var, command=abrir_ventana_ecri)
+boton_ecri.grid(row=0, column=8, padx=5, pady=10)
+
+
+
 
 
 # Botones de gráficos

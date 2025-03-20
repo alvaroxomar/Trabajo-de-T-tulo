@@ -9,6 +9,7 @@ if __name__ == "__main__":
     import tkinter as tk
     from matplotlib.colors import LogNorm
     from matplotlib.colors import SymLogNorm
+    from scipy.interpolate import interp1d
     import matplotlib.colorbar as cbar
     from matplotlib.colors import Normalize
     from mpl_toolkits.mplot3d import Axes3D
@@ -18,6 +19,7 @@ if __name__ == "__main__":
     import sys
     import pandas as pd
     import os
+    import matplotlib.animation as animation
     def guarda_graficos(nombre, ruta, guarda=False):
         global ruta_destino
         if guarda:
@@ -337,14 +339,16 @@ if __name__ == "__main__":
         '''
         Ev= grad_sup(g0, m, delta, r)
         ev = Vol_crit(Ev, Sep, r)
+        Sepcm = ajuste_ev(Sep)
+        eva  = Vol_crit(Ev, Sepcm, r)
         if fasciculo:
             Ev *= ajustar_gradiente(np.abs(Vol), ev)
-        if ev <= np.abs(Vol):
-            print(f"{np.abs(Vol)} kV >= {ev} kV, hay efecto corona")
+        if eva <= np.abs(Vol):
+            print(f"{np.abs(Vol)} kV >= {eva} kV, hay efecto corona")
             print(f"Gradiente critico es {Ev} kV/cm")
             return True
         else:
-            print(f"{np.abs(Vol)} kV < {ev} kV, no hay efecto corona")
+            print(f"{np.abs(Vol)} kV < {eva} kV, no hay efecto corona")
             print(f"Gradiente critico es {Ev} kV/cm")
             return False
         
@@ -353,9 +357,9 @@ if __name__ == "__main__":
         Ev = g0*delta*m*(1+0.301/np.sqrt(delta*r))
         return  Ev
     
-    def Vol_crit(Ev, Sep, r):
+    def Vol_crit(Ev, H, r):
         # Entrega resultado en kV
-        ev = Ev*r*np.log(Sep/r)
+        ev = Ev*r*np.log(H/r)
         return ev
 
     def rhoA(Ey, D, ep0, V0_p, V0_s, V, Ecrit_p, Ecrit_s, R):    
@@ -409,16 +413,28 @@ if __name__ == "__main__":
         Vm[-1,:] = 0 # borde inferior
         for g in range(len(f_point)):
             py, px = f_point[g] # ubica el voltaje en el nodo de posición central del conductor
+            #print(f"pos  son px {px} y py {py}")
+            #print(f"carga es {carga}")
             Vm[py,px] = f_value[g]
+            #if f_value[g]<0:
+                #print(f"voltaje es {f_value[g]}")
+                #salir_prueba()
             Vm2[f_point[g]] = f_value[g]
             Vm2[-1,:] = 0 # borde inferior
             Vm = impone_BC(Vm, Vm, f_value[g], px, py, in_condct=st, copia=copiado) # por defecto, ubica al voltaje en 5 nodos,uno central y 4 que lo  rodean
         if carga is not None:
-            #print(carga)
+            #print(f"largo carga es {len(carga)}")
             for z in range(len(carga)):
-                # Calcular la distancia entre cada punto de la malla y el punto (w, h)
-                Mod_coor = np.sqrt((X - w[z])**2 + (Y - h[z])**2)
-                Mod_coor2 = np.sqrt((X - w[z])**2 + (Y + h[z])**2)
+                #print(f"carga es :{carga[z]}")
+                if carga[z]<0 and len(carga)==1:
+                    wu = w[-1]
+                    hu = h[-1]
+                    Mod_coor = np.sqrt((X - wu)**2 + (Y - hu)**2)
+                    Mod_coor2 = np.sqrt((X - wu)**2 + (Y + hu)**2)
+                else:
+                    # Calcular la distancia entre cada punto de la malla y el punto (w, h)
+                    Mod_coor = np.sqrt((X - w[z])**2 + (Y - h[z])**2)
+                    Mod_coor2 = np.sqrt((X - w[z])**2 + (Y + h[z])**2)
                 #print(Mod_coor)
                 # Calcular el potencial eléctrico en cada nodo de la malla
                 #Vm += carga[z] * 0.5 * K*(1/Mod_coor - 1/Mod_coor2)
@@ -492,12 +508,73 @@ if __name__ == "__main__":
         Ey[-1, :] = (V[-1, :] - V[-2, :]) / dy
         Ex[:, 0] = -(V[:, 1] - V[:, 0]) / dx
         Ex[:, -1] = -(V[:, -1] - V[:, -2]) / dx
-
+        #print(f"posiciones {posicion_cond}, gradientes criticos {np.array(Evvs)/10**5} kV/cm, Voltajes  criticos {np.array(Vcos)/1000} kV, Voltajes {np.array(Vos)/1000}  kV")
+        #salir_prueba()
         if kapzov_borde:
             for i, (pos, Evv, Vco, Vo) in enumerate(zip(posicion_cond, Evvs, Vcos, Vos)):
                 posy, posx = pos
                 if bundle:
-                    print("Hay conductores fasciculados")
+                    #print("Hay conductores fasciculados")
+                    #Evv *= ajustar_gradiente(np.abs(Vo), Vco)
+                    print(f"El nuevo gradiente superficial depende de {Vo/1000} kV y es {Evv/(10**5)} kV/cm")
+                # Campo eléctrico en el conductor
+                E_magnitud = np.sqrt(Ex**2 + Ey**2)
+                factores = {
+                    (1, 0): np.abs(E_magnitud[posy + 1, posx] / Evv),
+                    (-1, 0): np.abs(E_magnitud[posy - 1, posx] / Evv),
+                    (0, 1): np.abs(E_magnitud[posy, posx + 1] / Evv),
+                    (0, -1): np.abs(E_magnitud[posy, posx - 1] / Evv),
+                }
+                for (dy, dx), factor in factores.items():
+                    Ex[posy + dy, posx + dx] /= factor
+                    Ey[posy + dy, posx + dx] /= factor
+
+        # Magnitud del campo eléctrico
+        E_magnitud = np.sqrt(Ex**2 + Ey**2)
+        return Ex, Ey, E_magnitud
+    
+    def calcular_campo_electrico_ind(V, dx, dy, posicion_cond, Evvs, Vcos, Vos, kapzov_borde=False, bundle=False):
+        """
+        Calcula los componentes del campo eléctrico (Ex, Ey) y su magnitud (E_magnitud),
+        considerando múltiples conductores con sus parámetros específicos.
+        
+        Args:
+            V (numpy.ndarray): Matriz de potencial eléctrico.
+            dx (float): Separación entre nodos en el eje x.
+            dy (float): Separación entre nodos en el eje y.
+            posicion_cond (list): Lista de coordenadas de los conductores [(y1, x1), (y2, x2)].
+            Evvs (list): Lista de gradientes superficiales iniciales para los conductores [Evv1, Evv2].
+            Vcos (list): Lista de voltajes de referencia para los conductores [Vco1, Vco2].
+            Vos (list): Lista de voltajes aplicados a los conductores [Vo1, Vo2].
+            kapzov_borde (bool): Si se aplica la condición de Kapzov en los bordes.
+            bundle (bool): Si se consideran conductores fasciculados.
+
+        Returns:
+            tuple: Componentes Ex, Ey y magnitud del campo eléctrico E_magnitud.
+        """
+        Ex = np.zeros_like(V)
+        Ey = np.zeros_like(V)
+
+        # Calcular derivadas centrales
+        Ey[1:-1, :] = (V[2:, :] - V[:-2, :]) / (2 * dy)
+        Ex[:, 1:-1] = -(V[:, 2:] - V[:, :-2]) / (2 * dx)
+
+        # Calcular bordes
+        Ey[0, :] = (V[1, :] - V[0, :]) / dy
+        Ey[-1, :] = (V[-1, :] - V[-2, :]) / dy
+        Ex[:, 0] = -(V[:, 1] - V[:, 0]) / dx
+        Ex[:, -1] = -(V[:, -1] - V[:, -2]) / dx
+
+        if kapzov_borde:
+            #if len(posicion_cond)==1:
+                #print(f" la pos de ahora es {posicion_cond}")
+                #salir_prueba()
+            #print(f" la pos de ahora es {posicion_cond}")
+            #salir_prueba()
+            for i, (pos, Evv, Vco, Vo) in enumerate(zip(posicion_cond, Evvs, Vcos, Vos)):
+                posy, posx = pos
+                if bundle:
+                    #print("Hay conductores fasciculados")
                     Evv *= ajustar_gradiente(np.abs(Vo), Vco)
                     print(f"El nuevo gradiente superficial depende de {Vo/1000} kV y es {Evv/(10**5)} kV/cm")
                 # Campo eléctrico en el conductor
@@ -516,7 +593,7 @@ if __name__ == "__main__":
         E_magnitud = np.sqrt(Ex**2 + Ey**2)
         return Ex, Ey, E_magnitud
 
-    
+    '''
     def convergencia(rho_actual, rho_anterior, tol):
         # Calcula la diferencia absoluta
         diferencia_absoluta = np.abs(rho_actual - rho_anterior)
@@ -559,7 +636,7 @@ if __name__ == "__main__":
         condicion = norma_infinita < tol
         
         return condicion, norma_infinita
-    '''
+    
 
     
     def num_iter_esquina(nx, ny, px,  py):
@@ -681,9 +758,11 @@ if __name__ == "__main__":
         if user_input.lower() == "s":
             print("Saliendo del programa...")
             sys.exit()
+        else:
+            plt.close("all")
     ################################################################
     ################################################################
-    def algoritmo_rho(sag, V, Evvs, Vcos, Vos, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='no',
+    def algoritmo_rho(sag, V, Vp, Vn, Evvs, Vcos, Vos, rho_inip, rho_inin, rho_b, max_iter_rho, dx, dy, movp, movn, wx,wy, val_cond, pos, condi='si', copia='no',
                     rho_h=False, visu=15, muestra=False, fi=30, is_bundled = False, polo=["izq", "der"]):
         '''
         Algoritmo principal de resolución del sistema de ecuaciones de la densidad de carga positiva y negativa
@@ -705,12 +784,13 @@ if __name__ == "__main__":
         rhon_0= rhon_0.astype(complex)
         rhop_0 =impone_BC(rhop_0, rho_b, val1, px1, py1, in_condct=condi, copia=copia, polo=polo[0]) # rhop_0 sería una red con condición de borde unicamente en la posición del conductor
         rhon_0 =impone_BC(rhon_0, rho_b, val2, px2, py2, in_condct=condi, copia=copia, polo=polo[1]) # rhon_0 sería una red con condición de borde unicamente en la posición del conductor
+        '''
         print(f'el valor en el centro del polo izquierdo es: {rhop_0[(py1,px1)]}')
         print(f"los  valores que  se distribuyen alrededor del  conductor izquierdo es rs: {rhop_0[(py1+1,px1)]}, rn: {rhop_0[(py1-1,px1)]},"
                f"re: {rhop_0[(py1,px1+1)]}, ro: {rhop_0[(py1,px1-1)]}")
         print(f"los  valores que  se distribuyen alrededor del  conductor derecho es rs: {rhop_0[(py2+1,px2)]}, rn: {rhop_0[(py2-1,px2)]},"
                f"re: {rhop_0[(py2,px2+1)]}, ro: {rhop_0[(py2,px2-1)]}")
-        '''
+        
         plt.figure(50)
         mesh = plt.pcolormesh(X, Y, np.real(rhop_0))
         cbar = plt.colorbar(mesh)
@@ -723,12 +803,13 @@ if __name__ == "__main__":
         plt.draw()  # Dibuja el gráfico
         plt.show()
         input("Presiona Enter para continuar...")
-        '''
+        
         print(f'el valor en el centro del polo derecho es: {rhon_0[(py2,px2)]}')
         print(f"los  valores que  se distribuyen alrededor del  conductor derecho es rs: {rhon_0[(py2+1,px2)]},"
                f"rn: {rhon_0[(py2-1,px2)]}, re: {rhon_0[(py2,px2+1)]}, ro: {rhon_0[(py2,px2-1)]}")
         print(f"los  valores que  se distribuyen alrededor del  conductor izquierdo es rs: {rhon_0[(py1+1,px1)]},"
                f"rn: {rhon_0[(py1-1,px1)]}, re: {rhon_0[(py1,px1+1)]}, ro: {rhon_0[(py1,px1-1)]}")
+        '''
         #salir_prueba()
         if rho_h is not False:
             rhop_hist = [rhop_0.copy()]
@@ -736,6 +817,27 @@ if __name__ == "__main__":
         else:
             rhop_hist = False
             rhon_hist = False
+        posp = [pos[0]]
+        Evvp  = [Evvs[0]]
+        Vcop = [Vcos[0]]
+        Vop = [Vos[0]]
+        posn = [pos[1]]
+        Evvnn  = [Evvs[1]]
+        Vconn = [Vcos[1]]
+        Vonn = [Vos[1]]
+        Exp1, Eyp1,Emp1 = calcular_campo_electrico(Vp, dx, dy, posp, Evvp, Vcop, Vop, kapzov_borde=True, bundle=is_bundled) # campo eléctrico  unipolar polo izquierdo
+        Exp1w = Exp1*movp + wx
+        Eyp1w = Eyp1*movp + wy
+        Exn2, Eyn2,Emp2 = calcular_campo_electrico(Vn, dx, dy, posn, Evvnn, Vconn, Vonn, kapzov_borde=True, bundle=is_bundled) # campo eléctrico  unipolar polo derecho
+        #salir_prueba()
+        '''
+        # Graficar el campo vectorial con magnitud escalada
+        plt.figure(1)
+        plt.quiver(X, Y, Exn2, Eyn2, Emp2, cmap='plasma', scale_units='xy')
+        plt.show()
+        '''
+        Exn2w = Exn2*movn - wx
+        Eyn2w = Eyn2*movn - wy
         Ex, Ey, Em = calcular_campo_electrico(V, dx, dy, pos, Evvs, Vcos, Vos, kapzov_borde=True, bundle=is_bundled)
         Ewxp = Ex*movp + wx
         Ewyp = Ey*movp + wy
@@ -747,14 +849,21 @@ if __name__ == "__main__":
         d = movn/epsilon0
         #d = 1/epsilon0
         g = Rep/ele - movn/epsilon0
-        rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho[0], dx, dy, Ewxp, Ewyp, rhop_0, rhon_0, rho_b, val1, px1, py1, a, b, fac_c=sag[0],
+        print("-----------------")
+        print("Comienza iteracion para rhop")
+        rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho[0], dx, dy, Exp1w, Eyp1w, rhop_0, rhon_0, 0, val1, px1, py1, a, b, fac_c=sag[0],
                                                 sig=sag[0], condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi, polo=polo[0])
         ext_rhop = extrapolate_borders(X, Y, rhop_updated.copy(), num_layers=30)
-        rhon_updated, rnhist, dif_listn = iteraciones_rho(max_iter_rho[-1], dx, dy, Ewxn, Ewyn, rhon_0, rhop_0, rho_b, val2, px2, py2, d, g, fac_c=sag[1],
-                                                sig=sag[1], condi=condi, copia=copia, rho_hist=rhon_hist, nombre='rho_n', est_gra=muestra, fi=fi+1, polo=polo[1])
+        #salir_prueba()
+        print("-----------------")
+        print("Comienza iteracion para rhon")
+        rhon_updated, rnhist, dif_listn = iteraciones_rho(max_iter_rho[-1], dx, dy, Exn2w, Eyn2w, rhon_0, rhop_0, 0, val2, px2, py2, d, g, fac_c=sag[1],
+                                                sig=sag[1], condi=condi, copia=copia, rho_hist=rhon_hist, nombre='rho_n', est_gra=muestra, fi=fi+10, polo=polo[1])
         ext_rhon = extrapolate_borders(X, Y, rhon_updated.copy(), num_layers=30)
+        #salir_prueba()
         count = 0
-        while True and count < 10:
+        '''
+        while True and count < 1:
             rhop_updated_0 = ext_rhop.copy()
             rhon_updated_0 = ext_rhon.copy()
             rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho[0], dx, dy, Ewxp, Ewyp, rhop_updated, rhon_updated, rho_b, val1, px1, py1, a, b, fac_c=sag[0],
@@ -770,10 +879,10 @@ if __name__ == "__main__":
             count += 1
             print("**************")
             print(f"En la iteracion {count-1} la maxima diferencia para rho_p es {diferp}")
-            print(f"En la iteracion {count-1} la maxima diferencia para rho_n es {diferp}")
+            print(f"En la iteracion {count-1} la maxima diferencia para rho_n es {difern}")
             print(":::::::::::::::")
     
-        '''
+        
         rhop_updated, rphist, dif_listp = iteraciones_rho(max_iter_rho[0], dx, dy, Ewxp, Ewyp, rhop_0, rhon_0, rho_b, val1, px1, py1, a, b, fac_c=sag[0],
                                                 sig=sag[0], condi=condi, copia=copia, rho_hist=rhop_hist, nombre='rho_p', est_gra=muestra, fi=fi, polo=polo[0])
         ext_rhop = extrapolate_borders(X, Y, rhop_updated.copy(), num_layers=30)
@@ -813,24 +922,109 @@ if __name__ == "__main__":
         fac_c: depende del tipo de conductor considerado
         '''
         global ruta_destino
+        rho_fix = np.zeros_like(rho_iterado)
         dist_rho1 =np.zeros_like(rho_iterado)
         dist_rho1 = dist_rho1.astype(complex)
         diff_list = []
         promedios = []
         desviaciones = []
         todos = False
-        iter_maximas = iteraciones+150
+        iter_maximas = iteraciones+100
+        #iter_maximas = 500
+        secuencia = []
         for i in range(iter_maximas): # en el caso de que se  automatizado, la cantidad total de iteraciones serán el minimo para las esquinas mas 100 iteraciones más
+            '''
+            plt.figure(100)
+            dist_rho11 = dist_rho1.real
+            #X, Y = np.meshgrid(np.arange(0, dist_rho1.shape[1]), np.arange(0, dist_rho1.shape[0]))
+            if not np.all(dist_rho11 == 0):  # Si no todos los valores son cero
+                min_linthresh = 1e-9  # Un valor mínimo positivo
+                linthresh = max(np.abs(min(np.abs(np.min(dist_rho11)), np.max(dist_rho11)) / 5), min_linthresh)
+                norm = SymLogNorm(linthresh=linthresh, vmin=dist_rho11.min(), vmax=dist_rho11.max(), base=10)
+                mesh = plt.pcolormesh(X, Y, dist_rho11.real, cmap='viridis', shading='auto', norm=norm)
+                cbar = plt.colorbar(mesh)
+                cbar.set_label(r'Densidad de carga positiva $C/m^3$', fontsize=11)
+                ticks = [dist_rho11.min(), -linthresh, 0, linthresh, dist_rho11.max()]
+                cbar.set_ticks(ticks)
+                cbar.set_ticklabels([f'{tick:.2e}' for tick in ticks])
+            else:
+                # Si rho_p es todo ceros, simplemente se hace el gráfico sin barra de colores
+                plt.pcolormesh(X, Y, dist_rho11, cmap='viridis', shading='auto')
+            plt.show(block=False)
+            salir_prueba()
+            '''
             if i == 0:
                 C = delta_Vp(fac_c, rho_iterado, Ewx, Ewy, dx, dy) # toma  la red que corresponde únicamente a un conductor
+                #print(f"C es en la iteracion {i+1}: {C}")
                 rhop0 = rho_iterado.copy()
-                dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, rho_fijo[1:-1, 1:-1], sig=sig)
+                '''
+                r1 = resuelve1(A,B,C[(py, 278-1)], rho_fix[(py, 278-1)], sig=sig)
+                betaa = B*rho_fix[(py, 278-1)]
+                ceta = C[(py, 278-1)]
+                r11 = (-betaa + np.sqrt(betaa**2 - 4*A*ceta+0j))/(2*A)
+                r12 = -betaa + np.sqrt(betaa**2)
+                
+                print("en nodo oeste del polo derecho:")
+                print(f"A es {A}")
+                print(f"B es {betaa}")
+                print(f"C es {ceta}")
+                print(f"resolucion eq cuadratica para nodo oeste es: {r1} y el resuelto manual es {r11}, r12 es {r12}")
+                print("-----------------")
+                print("en nodo norte del polo derecho:")
+                print(f"A es {A}")
+                print(f"B es {B*rho_fijo[(py-1, 278)]}")
+                print(f"C es {C[(py-1, 278)]}")
+                print("-----------------")
+                print("en nodo sur del polo derecho:")
+                print(f"A es {A}")
+                print(f"B es {B*rho_fijo[(py+1, 278)]}")
+                print(f"C es {C[(py+1, 278)]}")
+                '''
+                #dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, rho_fijo[1:-1, 1:-1], sig=sig)
+                #dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, 0, sig=sig)
+                dist_rho1[1:-1,1:-1] = resuelve11(A, C, sig=sig)
+                #print(f"copia es {copia}, polo  es {polo}, condi es {condi}")
                 dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_condct=condi, copia=copia, polo=polo)
+                if condi == 'no':
+                    dist_rho1 = impone_BC(dist_rho1, rho_b, 0, px, py, in_condct="si", copia=copia, polo=polo)
+                '''
+                print(f'el valor en el centro del polo izquierdo es: {dist_rho1[(py,px)]}')
+                print(f"los  valores que  se distribuyen alrededor del  conductor izquierdo es rs: {dist_rho1[(py+1,px)]}, rn: {dist_rho1[(py-1,px)]},"
+                    f"re: {dist_rho1[(py,px+1)]}, ro: {dist_rho1[(py,px-1)]}")
+                print(f"los  valores que  se distribuyen alrededor del  conductor derecho es rs: {dist_rho1[(py+1,278)]}, rn: {dist_rho1[(py-1,278)]},"
+                    f"re: {dist_rho1[(py,278+1)]}, ro: {dist_rho1[(py,278-1)]}")
+                '''
             else:
                 rhop0 = dist_rho1.copy()
                 C = delta_Vp(fac_c, dist_rho1, Ewx, Ewy, dx, dy)
-                dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, rho_fijo[1:-1, 1:-1], sig=sig)
+                #dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, rho_fijo[1:-1, 1:-1], sig=sig)
+                '''
+                ro = dist_rho1[(238,278-1)]
+                re = dist_rho1[(238,278+1)]
+                rs = dist_rho1[(238+1,278)]
+                rn = dist_rho1[(238-1,278)]
+                rcen = dist_rho1[(238,278)]
+                '''
+                #dist_rho1[1:-1,1:-1] = resuelve1(A, B, C, 0, sig=sig)
+                dist_rho1[1:-1,1:-1] = resuelve11(A, C, sig=sig)
+                #print(f"copia es {copia}, polo  es {polo}, condi es {condi}")
                 dist_rho1 = impone_BC(dist_rho1, rho_b, val, px, py, in_condct=condi, copia=copia, polo=polo)
+                if condi == 'no':
+                    '''
+                    if i > 180:
+                        print("se ocupa nodo central del polo  a valor nulo")
+                        print(f"px es {px} y py es {py}")
+                        print(f"valor de C en iteracion {i} es {C}")
+                        print(f"valores de la red en polo opuesto rcentral: {rcen}, ro: {ro}, re: {re},rn: {rn},rs: {rs}")
+                        salir_prueba()
+                    '''
+                    dist_rho1 = impone_BC(dist_rho1, rho_b, 0, px, py, in_condct="si", copia=copia, polo=polo)
+                '''
+                print(f'el valor en el centro del polo izquierdo es: {dist_rho1[(py,px)]}')
+                print(f"los  valores que  se distribuyen alrededor del  conductor izquierdo es rs: {dist_rho1[(py+1,px)]}, rn: {dist_rho1[(py-1,px)]},"
+                    f"re: {dist_rho1[(py,px+1)]}, ro: {dist_rho1[(py,px-1)]}")
+                '''
+            #secuencia.append(dist_rho1.real.copy())
             convergencia_total, estado = evaluar_estado(dist_rho1, rhop0, diff_list, tol=8e-06, px=px, py=py, rho_hist=rho_hist, num_it=iteraciones, it =  i+1)
             #condicion,diff = convergencia(dist_rho1, rhop0,1e-6)
             if estado["promedio"] is not None and estado["dev_dif"] is not None and estado["diff"] is not None:
@@ -865,7 +1059,67 @@ if __name__ == "__main__":
                 print(f'No hay convergencia de {nombre} en la iteración {i}: último promedio actual es {estado['promedio']}')
                 print(f'No hay convergencia de {nombre} en la iteración {i}: última des del promedio actual es {estado['dev_dif']}')
                 print(f'No hay convergencia de {nombre} en la iteración {i}: última tendencia del promedio actual es {estado['tendencia']}')
-                
+        '''
+        figuranum = fi+70
+        plt.figure(figuranum)
+        dist_rho11 = dist_rho1.real
+        #X, Y = np.meshgrid(np.arange(0, dist_rho1.shape[1]), np.arange(0, dist_rho1.shape[0]))
+        
+        if not np.all(dist_rho11 == 0):  # Si no todos los valores son cero
+            min_linthresh = 1e-5  # Un valor mínimo positivo
+            linthresh = max(np.abs(min(np.abs(np.min(dist_rho11)), np.max(dist_rho11)) / 5), min_linthresh)
+            norm = SymLogNorm(linthresh=linthresh, vmin=dist_rho11.min(), vmax=dist_rho11.max(), base=10)
+            mesh = plt.pcolormesh(X, Y, dist_rho11.real, cmap='viridis', shading='auto', norm=norm)
+            cbar = plt.colorbar(mesh)
+            cbar.set_label(r'Densidad de carga positiva $C/m^3$', fontsize=11)
+            ticks = [dist_rho11.min(), -linthresh, 0, linthresh, dist_rho11.max()]
+            cbar.set_ticks(ticks)
+            cbar.set_ticklabels([f'{tick:.2e}' for tick in ticks])
+        else:
+            # Si rho_p es todo ceros, simplemente se hace el gráfico sin barra de colores
+            plt.pcolormesh(X, Y, dist_rho11, cmap='viridis', shading='auto')
+        plt.show()
+        salir_prueba()
+        
+        fig, ax = plt.subplots(num=figuranum)
+        cmap = 'viridis'
+        min_linthresh = 1e-9  # Un valor mínimo positivo
+        linthresh = max(np.abs(min(np.abs(np.min(dist_rho11)), np.max(dist_rho11)) / 5), min_linthresh)
+        norm = SymLogNorm(linthresh=linthresh, vmin=dist_rho11.min(), vmax=dist_rho11.max(), base=10)
+        mesh = ax.pcolormesh(X, Y, secuencia[0], cmap=cmap, shading='auto',norm=norm)
+        fig.colorbar(mesh)
+        #print(f"los  valores que  se distribuyen alrededor del  conductor derecho es rs: {secuencia[-1][(238+1,278)]}, rn: {secuencia[-1][(238-1,278)]},"
+        #            f"re: {secuencia[-1][(238,278+1)]}, ro: {secuencia[-1][(238,278-1)]}")
+        # Agregar el contador de iteraciones en la figura
+        contador_texto = ax.text(0.05, 0.9, '', transform=ax.transAxes, fontsize=14, color='white')
+
+        # Función de actualización para la animación
+        def actualizar(frame):
+            mesh.set_array(secuencia[frame].ravel())  # Actualizar datos
+            contador_texto.set_text(f"Iteración: {frame}")  # Actualizar el contador
+            return mesh, contador_texto
+
+        # Crear animación con mayor velocidad
+        ani = animation.FuncAnimation(fig, actualizar, frames=len(secuencia), interval=50, blit=False)
+
+        plt.figure(figuranum+1)  # Crear la figura 101
+        fig2, ax2 = plt.subplots(num=101)  # Asegurar que sea la figura 101
+        mesh2 = ax2.pcolormesh(X, Y, secuencia[-1], cmap=cmap, shading='auto', norm=norm)
+        fig2.colorbar(mesh2)  # Agregar barra de color
+        ax2.set_title("Última iteración")  # Título para identificarlo
+        # 🔹 FIGURA 102: Última iteración 3D
+        plt.figure(figuranum+2)  # Crear la figura 102 para 3D
+        fig3 = plt.figure(num=figuranum+2)
+        ax3 = fig3.add_subplot(111, projection='3d')  # Configurar para gráficos 3D
+
+        # Graficar en 3D usando plot_surface
+        surf = ax3.plot_surface(X, Y, secuencia[-1], cmap=cmap, edgecolor='none', norm=norm)
+        fig3.colorbar(surf)
+        ax3.set_title("Última iteración (3D)")
+
+        plt.show(block=False)
+        salir_prueba()
+        '''
         if est_gra is not False:
             '''
             plt.figure(fi)
@@ -881,9 +1135,18 @@ if __name__ == "__main__":
             #guarda_graficos(f"Evolución promedio y desviación {nombre}", ruta_destino, guarda=guarda)
             '''
         return dist_rho1, rho_hist, diff_list
-
-    def resuelve1(a, b, c, rho_fijo, sig=1):
-        B = b*rho_fijo
+    def resuelve11(a,c,sig):
+        if sig==1:
+            solucion =  np.sqrt(-c/a + 0j)
+            if np.any(solucion <0):
+                solucion *=-1
+        elif sig==-1:
+            solucion = np.sqrt(c/a + 0j)
+            if np.any(solucion >0):
+                solucion *=-1
+        return solucion
+    def resuelve1(a, b, c, rho_fi, sig=1):
+        B = b*rho_fi
         if sig==1:
             sol1 = (-B + np.sqrt(B**2-4*a*c+0j))/(2*a)
             return sol1
@@ -1146,7 +1409,7 @@ if __name__ == "__main__":
             V = update_v(V, f_rhs, dx,dy, fixed_point=fd_point, fixed_value=[0,0], V_boundary=V_b, Exx=None,Eyy=None)
             condicion, diff = convergencia(V, Vold, 1e-6)
             if condicion:
-                print(f"Convergencia alcanzada para V en la iteración {iteration}")
+                print(f"Convergencia alcanzada para creacion de V en la iteración {iteration}")
                 break
         return V
 
@@ -1192,7 +1455,7 @@ if __name__ == "__main__":
 
     def inicializar_densidad(Ey, g0, Vol, diametro, R, m, delta, nodosy, nodosx, pos_conductor1, pos_conductor2, yco, con_condct='si', copiado='no', fasc=False):
         """Inicializa la densidad de carga y las condiciones de borde."""
-        mp, mn = m # inidices de  rugosidad
+        mp, mn = m # estados de superficie  de conductores
         ycop, ycon = yco
         Volp, Voln = Vol
         posy1, posx1= pos_conductor1 # en formato (y,x)
@@ -1201,12 +1464,22 @@ if __name__ == "__main__":
         #Ecritn= E_onset(mn, delta, R[1]) # cálcula gradiente superficial crítico polo negativo
         Ecritp= grad_sup(g0,  mp, delta, R[0]*100) # cálcula gradiente superficial crítico polo positivo kV/cm
         Ecritn= grad_sup(g0,  mn, delta, R[1]*100) # cálcula gradiente superficial crítico polo negativo kV/cm
-        #V0p = V_onset(mp, Ecritp, R[0]) # cálcula voltaje crítico polo positivo
-        #V0n = V_onset(mn, Ecritn, R[1]) # cálcula voltaje crítico polo negativo
         V0p = Vol_crit(Ecritp, ycop*100, R[0]*100) # cálcula voltaje crítico polo positivo kV
         V0n = Vol_crit(Ecritn, ycon*100, R[1]*100) # cálcula voltaje crítico polo negativo kV
+        if fasc:
+            Ecritpa = Ecritp*ajustar_gradiente(np.abs(Vol[0])/1000, V0p)
+            Ecritna = Ecritn*ajustar_gradiente(np.abs(Vol[1])/1000, V0n)
+        #V0p = V_onset(mp, Ecritp, R[0]) # cálcula voltaje crítico polo positivo
+        #V0n = V_onset(mn, Ecritn, R[1]) # cálcula voltaje crítico polo negativo
+        ycopcm = ajuste_ev(ycop*100) # en cm
+        yconcm = ajuste_ev(ycon*100)
+        #print(f"altura 1 es {ycopcm} cm, altura 2 es {yconcm} cm")
+        V0p = Vol_crit(Ecritpa, ycopcm, R[0]*100) # cálcula voltaje crítico polo positivo kV
+        V0n = Vol_crit(Ecritna, yconcm, R[1]*100) # cálcula voltaje crítico polo negativo kV
         Coronap = Hay_corona(Volp/1000, ycop*100, R[0]*100, delta, mp, g0, fasciculo=fasc)
         Coronan = Hay_corona(Voln/1000, ycon*100, R[1]*100, delta, mn, g0, fasciculo=fasc)
+        print(f"Ey es {Ey}, diametro es {diametro}, epsilon0 es {epsilon0}, V0p es {V0p} kV, V0n es {V0n} kV, Vol es {Vol} kV, Ecritp es {Ecritp}"
+              f" kV/cm y ajustado es {Ecritpa} kV/cm, Ecritn es {Ecritn} kV/cm y ajustado es {Ecritna} kV/cm, R es {R}")
         rho_ip, rho_in = rhoA(Ey, diametro, epsilon0, V0p*1000, V0n*1000, V, Ecritp*10**5, Ecritn*10**5, R)
         if not Coronap and not Coronan:
             rho_ip, rho_in = 0,0
@@ -1232,7 +1505,7 @@ if __name__ == "__main__":
         '''
         return rho_inicial, rho_boundary, rho_ip, rho_in
 
-    def iterar_potencial(sag, Vmi, Evvs, Vcos, Vos, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, windx, windy, max_iter_rho, max_iter,
+    def iterar_potencial(sag, Vmi, Vmip, Vmin, Evvs, Vcos, Vos, rho_inicial, rho_boundary, rho_i, fixed_point, dx, dy, windx, windy, max_iter_rho, max_iter,
                         it_global, rho_h = False, visu=15, con_condct='si', copiado='no', must = False, fi=30, is_bundled=False):
         """Itera para calcular el potencial eléctrico y la densidad de carga."""
         Vm = np.zeros_like(Vmi)
@@ -1247,7 +1520,7 @@ if __name__ == "__main__":
             Volder = Vm.copy()
             if n == 0:
                 print('Primer rho')
-                rho_p, rho_n, rho_d = algoritmo_rho(sag, Vmi, Evvs, Vcos, Vos, rho_inicial, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov1, mov2, windx, windy,
+                rho_p, rho_n, rho_d = algoritmo_rho(sag, Vmi, Vmip, Vmin, Evvs, Vcos, Vos, rho_inicial, rho_inicial, rho_boundary, max_iter_rho, dx, dy, mov1, mov2, windx, windy,
                                                 [rho_ip, rho_in], fixed_point, condi=con_condct, copia=copiado, rho_h=rho_h, visu=visu, muestra=must, fi=fi, is_bundled=is_bundled)
                 #Vp =algoritmo_V_rho(Vm, rho_p, dx, dy,fixed_point[0], 0, max_iter)
                 #Vn =algoritmo_V_rho(Vm, rho_n, dx, dy,fixed_point[1], 0, max_iter)
@@ -1257,21 +1530,27 @@ if __name__ == "__main__":
                 #                                 [rho_ip, rho_in], fixed_point, condi=con_condct, copia=copiado, rho_h=rho_h, visu=visu, muestra=must, fi=fi, is_bundled=is_bundled)
                 #rho_p, rho_n = densidad_voltaje([Vp,Vn], rho_boundary, rho_ip, rho_in, fixed_point, cond=con_condct, cop=copiado)
                 rho_d = densidad_voltaje(Vm, rho_boundary, rho_ip, rho_in, fixed_point, cond=con_condct, cop=copiado)
+            print(f"Se calcula el potencial iónico en la iteración {n}")
             Vm = algoritmo_V_rho(Vm, rho_d, dx, dy, fixed_point, 0, max_iter)
             #rho_d = densidad_voltaje(Vm, rho_boundary, rho_ip, rho_in, fixed_point, cond=con_condct, cop=copiado)
             condicion, max_diff = convergencia(Vm, Volder, 3.1e-9)
             if condicion:
-                print(f"Convergencia alcanzada para V en la iteración {n}")
+                print(f"Convergencia alcanzada para V en la iteración {n} del ciclo global")
+                print(f"La máxima diferencia relativa conseguida fue de {max_diff}")
                 break
             else:
-                print(f'Diferencia relativa V y Vold: {max_diff}')
+                print(f'Diferencia relativa V y Vold en iteracion {n} es: {max_diff} en el ciclo global')
                 print('*****************************')
             if n==it_global-1:
                 print(f'se alcanzó el máximo de iteraciones: {n}')
-        Vm = -Vm # ajuste intensionadooo
-        return Vm, rho_p, rho_n, rho_d
+        #Vm = -Vm # ajuste intensionadooo
+        return Vm, rho_p/100, rho_n/100, rho_d/100
 
-
+    def ajuste_ev(dis):
+        # dis en cm
+        # devuelve en cm
+        return dis/(1.9287+1.1072*(dis/100))
+    
     def calcular_resultados_finales(Vm, Vos, Vcos, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l, posicion_cond, Evvs, is_bundled= False):
         """Calcula el campo eléctrico, densidad de corriente y verifica la convergencia."""
         Vol_def = Vm + Vmi
@@ -1290,6 +1569,80 @@ if __name__ == "__main__":
 
     #print(r'Jp promedio calculado a l=0 m: '+str(np.mean(J[-1,:])/(10**(-9)))+' nA/m^2, y a l='+str(l)+' m, Jp ='+str(Jave*(10**9))+' nA/m^2')
     #print(r'Jp promedio propuesto: '+str(Jp*(10**9))+' nA/m^2')
+    
+    def detectar_outliers(datos, factor=2):
+        """Detecta outliers usando la variación absoluta con un umbral basado en la media y desviación estándar"""
+        diffs = np.abs(np.diff(datos, n=1))
+        umbral = np.mean(diffs) + factor * np.std(diffs)
+        outliers = np.where(diffs > umbral)[0] + 1  # +1 porque diff reduce el tamaño en 1
+        return outliers
+
+    def expandir_outliers(outliers, n, longitud):
+        """Expande la región afectada por outliers para incluir vecinos inmediatos"""
+        vecinos = set(outliers)
+        for idx in outliers:
+            for i in range(1, n+1):
+                if idx - i >= 0:
+                    vecinos.add(idx - i)
+                if idx + i < longitud:
+                    vecinos.add(idx + i)
+        return np.array(sorted(vecinos))
+
+    def suavizado(datos, outliers=None, factor=2):
+        """Suaviza los valores en los índices de outliers usando interpolación cuadrática"""
+        datos = np.array(datos, dtype=float)
+        
+        if outliers is None:
+            outliers = detectar_outliers(datos, factor)
+
+        if len(outliers) == 0:
+            return datos  # No hay outliers, retornar sin cambios
+
+        # Agrupar outliers consecutivos
+        grupos = []
+        grupo_actual = [outliers[0]]
+
+        for i in range(1, len(outliers)):
+            if outliers[i] == outliers[i - 1] + 1:
+                grupo_actual.append(outliers[i])
+            else:
+                grupos.append(grupo_actual)
+                grupo_actual = [outliers[i]]
+        grupos.append(grupo_actual)
+
+        # Suavizar cada grupo de outliers
+        for grupo in grupos:
+            inicio, fin = grupo[0], grupo[-1]
+            idx_izq = max(0, inicio - 3)
+            idx_der = min(len(datos) - 1, fin + 3)
+
+            # Puntos válidos para interpolación
+            x_validos = list(range(idx_izq, inicio)) + list(range(fin + 1, idx_der + 1))
+            y_validos = datos[x_validos]
+
+            if len(x_validos) < 3:
+                interpolador = interp1d(x_validos, y_validos, kind='linear', fill_value="extrapolate")
+            else:
+                interpolador = interp1d(x_validos, y_validos, kind='quadratic', fill_value="extrapolate")
+
+            # Aplicar interpolación solo a los outliers detectados
+            datos[grupo] = interpolador(grupo)
+
+        return datos
+    def ajustar_suavizado(datos, factor_1=2, factor_2=1.5):
+        """Ajusta la curva con suavizado sucesivo en dos pasos"""
+        
+        # 🔹 Primer paso: Detectar outliers y suavizar
+        outliers_primera_pasa = detectar_outliers(datos, factor=factor_1)
+        y_suavizado_1 = suavizado(datos, outliers_primera_pasa, factor=factor_1)
+
+        # 🔹 Ampliamos la zona afectada a los vecinos de los outliers
+        outliers_ampliados = expandir_outliers(outliers_primera_pasa, n=1, longitud=len(datos))
+
+        # 🔹 Segundo paso: Ajuste más fino con la nueva zona de outliers
+        datos_suavizado_final = suavizado(y_suavizado_1, outliers_ampliados, factor=factor_2)
+
+        return datos_suavizado_final
 
     def ejecutar_algoritmo(sag, fixed_point, diametro, fixed_value, X, Y, R, Q, mov, m, delta, nodosy, nodosx, yco, g0,
                             dx, dy, windx, windy, max_iter_rho, Evvs, Vcos, max_iter, it_global, l, visualizacion, rho_h=False,
@@ -1304,17 +1657,49 @@ if __name__ == "__main__":
         print(f"es fasciculado?: {is_bundled}")
         # Paso 1: Calcular potencial inicial
         Vmi = calcular_potencial_inicial(fixed_point, fixed_value, X, Y, R, Q, st='noV') # Ubicar en 5 nodos con el voltaje de +- en cada conductor
+        #print(f"punto es  {fixed_point[1]}")
+        #print(f"valor es {fixed_value[1]}")
+        #print(f"R es {R[1]}")
+        #print(f"Q es {Q[1]}")
+        Vmin = calcular_potencial_inicial([fixed_point[1]], [fixed_value[1]], X, Y, [R[1]], [Q[1]], st='noV')
+        '''
+        linthresh = 1e+2  # Ajusta según la magnitud de Vol_def
+        plt.figure(5)
+        norm = SymLogNorm(linthresh=linthresh, vmin=Vmin.min(), vmax=Vmin.max(), base=10)
+        mesh = plt.pcolormesh(X, Y, Vmin, cmap='plasma', shading='auto', norm=norm)
+        cbar = plt.colorbar(mesh)
+        cbar.set_label(r'Potencial definitivo $kV$')
+        ticks = [Vmin.min(), -linthresh, 0, linthresh, Vmin.max()]
+        cbar.set_ticks(ticks)
+        cbar.set_ticklabels([f'{tick/1000:.2f}' for tick in ticks])
+        plt.show(block=False)
+        '''
+        Vmip = calcular_potencial_inicial([fixed_point[0]], [fixed_value[0]], X, Y, [R[0]], [Q[0]], st='noV')
+        '''
+        linthresh = 1e+2
+        plt.figure(3)
+        norm = SymLogNorm(linthresh=linthresh, vmin=Vmip.min(), vmax=Vmip.max(), base=10)
+        mesh = plt.pcolormesh(X, Y, Vmip, cmap='plasma', shading='auto', norm=norm)
+        cbar = plt.colorbar(mesh)
+        cbar.set_label(r'Potencial definitivo $kV$')
+        ticks = [Vmip.min(), -linthresh, 0, linthresh, Vmip.max()]
+        cbar.set_ticks(ticks)
+        cbar.set_ticklabels([f'{tick/1000:.2f}' for tick in ticks])
+        plt.show()
+        '''
         Exx,  Eyy,  E = calcular_campo_electrico(Vmi, dx, dy, fixed_point, Evvs, Vcos, fixed_value, kapzov_borde=True, bundle=is_bundled)
         Ey = E[nod_central[1],nod_central[0]] # Componente vertical del campo eléctrico en punto medio entre los conductores, necesario  para cb carga en conductor
         # Paso 2: Inicializar densidades
         rho_inicial, rho_boundary, rho_ip, rho_in = inicializar_densidad(Ey, g0, fixed_value,  diametro, R, m, delta, nodosy, nodosx, pos_conductor1,
                                                                 pos_conductor2, yco, con_condct=condct, copiado=copy, fasc = is_bundled)
         # Paso 3: Iterar para calcular Vm y rho
-        Vm, rho_p, rho_n, rho_d = iterar_potencial(sag, Vmi, Evvs, Vcos, fixed_value, rho_inicial, rho_boundary, [rho_ip, rho_in], fixed_point, dx, dy, windx, windy,
+        Vm, rho_p, rho_n, rho_d = iterar_potencial(sag, Vmi, Vmip, Vmin, Evvs, Vcos, fixed_value, rho_inicial, rho_boundary, [rho_ip, rho_in], fixed_point, dx, dy, windx, windy,
                                                     max_iter_rho, max_iter, it_global, rho_h=rho_h, visu=visualizacion, con_condct=condct, copiado=copy, must = Muestra, fi=fi, is_bundled=is_bundled)
+        print(f"Las densidades de carga espacial y el potencial iónico han sido calculados con éxito")
         #fi += 1
         visualizacion += 2
         # Paso 4: Calcular resultados finales
+        print("Se calcula el potencial definitivo y el campo eléctrico")
         Vol_def = Vm+Vmi
         Jtx, Jty, Campo_ini, Campo_fin, Ei , Jtot= calcular_resultados_finales(Vm, fixed_value, Vcos, Vmi, rho_p, rho_n, dx, dy, mov, windx, windy, l, fixed_point, Evvs, is_bundled = is_bundled)
         '''
@@ -1462,9 +1847,9 @@ if __name__ == "__main__":
                 "Radio equivalente 1 (cm)": [Req1],
                 "Radio equivalente 2 (cm)": [Req2],
                 "Gradiente superficial crítico izq (kV/cm)": Evv10,
-                "Potencial crítico corona izq (kV)": evv1,
+                "Potencial crítico corona izq (kV)": evv1a,
                 "Gradiente superficial crítico der (kV/cm)": Evv20,
-                "Potencial crítico corona der (kV)": evv2
+                "Potencial crítico corona der (kV)": evv2a
             }
             df_conductores = pd.DataFrame(datos_conductores)
 
@@ -1541,6 +1926,7 @@ if __name__ == "__main__":
         nom_csv = f"modeloBIP_{Vol/1000}_{ycoor1}_{ycoor2}_{nx}_{ny}.csv"
         nom_xlsx = f"modeloBIP_{Vol/1000}_{ycoor1}_{ycoor2}_{nx}_{ny}.xlsx"
         #guardar_datos(x, Ei, Ji, ruta=ruta_destino, nombre_csv=nom_csv, nombre_excel=nom_xlsx, guarda=guarda)
+        print("Se guardan los datos del sistema en el directorio escogido")
         guardar_datos_multihoja(x, Ei, Ji, ruta=ruta, nombre_csv=nom_csv, nombre_excel=nom_xlsx, guarda=guarda)
 
     ############### PARÁMETROS ###################
@@ -1642,7 +2028,8 @@ if __name__ == "__main__":
     #print(f"Evv1 es {Evv1} kV/cm")
     Evv2 = grad_sup(g0, m2, delta, Req2) # kV/cm
     #print(f"Evv2 es {Evv2} kV/cm")
-    Evvs = [Evv1*10**5, Evv2*10**5] # V/m
+    ya1 = ajuste_ev(y_coor1*100) # cm
+    ya2 = ajuste_ev(y_coor2*100) # 
     evv1 = Vol_crit(Evv1, y_coor1*100, Req*100) # kV
     evv2 = Vol_crit(Evv2, y_coor2*100, Req*100) # kV
     if is_bundled:
@@ -1651,9 +2038,12 @@ if __name__ == "__main__":
     else:
         Evv10 = Evv1
         Evv20 = Evv2
-    Vcos = [evv1*1000, evv2*1000] # V
-    print(f"potencial critico corona polo  positivo es {evv1} kV y gradiente superficial critico es {Evv10} kV/cm")
-    print(f"potencial critico corona polo  negativo es {evv2} kV y gradiente superficial critico es {Evv20} kV/cm")
+    evv1a = Vol_crit(Evv10, ya1, Req*100) # kV
+    evv2a = Vol_crit(Evv20, ya2, Req*100) # kV
+    Evvs = [Evv10*10**5, Evv20*10**5] # V/m
+    Vcos = [evv1a*1000, evv2a*1000] # V
+    print(f"potencial critico corona polo  positivo es {evv1a} kV y gradiente superficial critico es {Evv10} kV/cm")
+    print(f"potencial critico corona polo  negativo es {evv2a} kV y gradiente superficial critico es {Evv20} kV/cm")
     #input("pausa mientras")
     fi = 30 # número de la ventana donde se muestra la evolución de la diferencia promedio y la desviación
     epsilon0 = (1 / (36 * np.pi)) * 10**(-9)  # (F/m) permitividad del vacío
@@ -1734,10 +2124,12 @@ if __name__ == "__main__":
     #V = [Vol,Vol] # voltajes sobre los conductores reales
     V = [Vol1,  Vol2]
     Q = np.dot(np.linalg.inv(P),V) # Se determinan las cargas de los conductores
+    print(f"La cargas de los conductores ya han sido calculados")
+    print("*********************")
 
 
 
-
+    print(f"Se procede con el algoritmo principal")
     Campo_ini, Vmi, rho_p, rho_n, rho_d, Vm, Vol_def, Campo_fin, Ei, Jtx, Jty, Jtot = ejecutar_algoritmo(sag, fixed_point, distancia,
                                                                                                     fixed_value, X, Y, R,
                                                                                                     Q, mov, m, delta, nodosy,
@@ -1747,18 +2139,27 @@ if __name__ == "__main__":
                                                                                                             l, visualizacion, rho_h=histl,
                                                                                                                 condct=in_condct, copy=copiado,
                                                                                                                 Muestra=mostrar, fi=fi, is_bundled=is_bundled)
-    Exxini, Eyyini, Em = Campo_ini
+    print("***********************")
+    print("Se han  calculado los resultados finales")
+    coordenada_med = encuentra_nodos(x,y,0,l)[1]
+    Exxini, Eyyini, Emi = Campo_ini
     Edefx, Edefy, Edef = Campo_fin
-    Eyyini_nom = Eyyini[encuentra_nodos(x,y,0,l)[1],:] # Perfil de la componente en y del campo eléctrico inicial
-    # Promedio del perfil módulo densidad de corriente total a nivel de medición
-    # Este solo es usado para la leyenda
-    Jtx_level = Jtx[encuentra_nodos(x,y,0,l)[1],:] # Perfil de la componente en x de la densidad de corriente total
-    Jty_level = Jty[encuentra_nodos(x,y,0,l)[1],:] # Perfil de la componente en y de la densidad de corriente total
-    Jper = Jtot[encuentra_nodos(x, y, 0,l)[1],:]
+    Jper = Jtot[coordenada_med,:]
+    Edefys = Edefy[coordenada_med,:]
+    Edefs = Edef[coordenada_med,:]
+    Emis = Emi[coordenada_med,:]
+    Eyyini_nom = Eyyini[coordenada_med,:]
+    Edefys = ajustar_suavizado(Edefys, factor_1=2, factor_2=1.5)
+    Edefs = ajustar_suavizado(Edefs, factor_1=2, factor_2=1.5)
+    Emis = ajustar_suavizado(Emis, factor_1=2, factor_2=1.5)
+    Jtots = ajustar_suavizado(Jper, factor_1=2, factor_2=1.5)
+    #JJ = np.sqrt(Jtx_level**2 + Jty_level)
+    #print(f"a mano es J={JJ*10**9} nA/m^2")
+    #print(f"desde funcion es J={Jper*10**9} nA/m^2")
+    Jtx_level = Jtx[coordenada_med,:] # Perfil de la componente en x de la densidad de corriente total
+    Jty_level = Jty[coordenada_med,:] # Perfil de la componente en y de la densidad de corriente total
+    Jty_level = ajustar_suavizado(Jty_level, factor_1=2, factor_2=1.5)
     Jave = np.mean(Jper)
-    JJ = np.sqrt(Jtx_level**2 + Jty_level)
-    print(f"a mano es J={JJ*10**9} nA/m^2")
-    print(f"desde funcion es J={Jper*10**9} nA/m^2")
 
 
     ################ ALMACENAMIENTO DE DATOS ####################
@@ -1767,14 +2168,16 @@ if __name__ == "__main__":
     # Lista gráficos
     def grafE(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
+        linthresh = 1e+2
         #mod = np.sqrt(U**2+Ww**2)
-        plt.quiver(X, Y, Exxini, Eyyini, Em, cmap='plasma', scale_units='xy')
+        plt.quiver(X, Y, Exxini, Eyyini, Emi, cmap='plasma', scale_units='xy')
         #plt.imshow(E, cmap='viridis', interpolation='none')
         # Agregar la barra de colores
         cbar = plt.colorbar()
         cbar.set_label(r'Magnitud campo eléctrico $kV/m$', fontsize=11)
         # Obtén los ticks actuales
-        ticks = cbar.get_ticks()
+        #ticks = cbar.get_ticks()
+        ticks = [Emi.min(), 0, linthresh*100, linthresh*1000, 2.5*(linthresh*1000) , Emi.max()]
         # Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
         cbar.set_ticks(ticks)
         cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
@@ -1825,7 +2228,7 @@ if __name__ == "__main__":
         
         # Verificar si rho_p es una matriz de solo ceros
         if not np.all(rho_p == 0):  # Si no todos los valores son cero
-            min_linthresh = 1e-5  # Un valor mínimo positivo
+            min_linthresh = 1e-9  # Un valor mínimo positivo
             linthresh = max(np.abs(min(np.abs(np.min(rho_p)), np.max(rho_p)) / 5), min_linthresh)
             norm = SymLogNorm(linthresh=linthresh, vmin=rho_p.min(), vmax=rho_p.max(), base=10)
             mesh = plt.pcolormesh(X, Y, rho_p, cmap='viridis', shading='auto', norm=norm)
@@ -1857,7 +2260,7 @@ if __name__ == "__main__":
         
         # Verificar si rho_n es una matriz de solo ceros
         if not np.all(rho_n == 0):  # Si no todos los valores son cero
-            min_linthresh = 1e-5  # Un valor mínimo positivo
+            min_linthresh = 1e-9  # Un valor mínimo positivo
             linthresh = max(np.abs(min(np.abs(np.min(rho_n)), np.max(rho_n)) / 5), min_linthresh)
             norm = SymLogNorm(linthresh=linthresh, vmin=rho_n.min(), vmax=rho_n.max(), base=10)
             mesh = plt.pcolormesh(X, Y, rho_n, cmap='viridis', shading='auto', norm=norm)
@@ -1971,13 +2374,15 @@ if __name__ == "__main__":
 
     def grafEf(nm, ruta, mostrar=False, guarda=False):
         plt.figure(nm)
+        linthresh = 1e+2
         #plt.quiver(Xe, Ye, Edefx[1:-1, 1:-1], Edefy[1:-1, 1:-1], Edef[1:-1, 1:-1], cmap='plasma')
         plt.quiver(X, Y, Edefx, Edefy, Edef, cmap='plasma', scale_units='xy')
         # Agregar la barra de colores
         cbar = plt.colorbar()
         cbar.set_label(r'Magnitud campo eléctrico $kV/m$', fontsize=11)
         # Obtén los ticks actuales
-        ticks = cbar.get_ticks()
+        #ticks = cbar.get_ticks()
+        ticks = [Edef.min(), linthresh*1000, linthresh*10000 , 1.5*(linthresh*10000), Edef.max()]
         # Cambia las etiquetas a una magnitud diferente (por ejemplo, dividiendo por 1000)
         cbar.set_ticks(ticks)
         cbar.set_ticklabels([f'{tick/1000:.1f}' for tick in ticks]) 
@@ -1996,13 +2401,15 @@ if __name__ == "__main__":
 
     def grafJ1(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
+        
         #plt.plot(x[30:-30], Ji[30:-30]*(10**9))
-        plt.plot(x[30:-30], Jtot[encuentra_nodos(x, y, 0, l)[1],30:-30]*(10**9))# perfil del módulo de ladensidad de corriente iónica total
+        plt.plot(x[30:-30], Jtots[30:-30]*(10**9), label=r"$|J|_{ave}$ ="f"{formatear_numero(Jave*(10**9))}"+r" $nA/m^2$")# perfil del módulo de ladensidad de corriente iónica total
+        plt.plot(x[30:-30], -Jty_level[30:-30]*(10**9),linestyle="-.", label=r"$J_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Jty[coordenada_med,:]*(10**9))))}"+r" $nA/m^2$") # perfil de la componente vertical de la densidad de corriente
         plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
         plt.ylabel(r'Densidad de corriente iónica ($nA/m^2$)',fontsize=11)
         plt.title(r'Magnitud de corriente iónica a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(viento_x), fontsize=13)
-        plt.tight_layout()
-        plt.legend([f'$J_p$ = {str(np.round(Jave*(10**9),3))} $nA/m^2$'])
+        
+        plt.legend(loc="lower left")
         plt.grid(True)
         ax1 = plt.gca()
         if any(x<0 for x in Jtot[encuentra_nodos(x, y, 0, l)[1],30:-30]):
@@ -2010,12 +2417,13 @@ if __name__ == "__main__":
         else:
             escala = [0,Sy]
         ax2 = ax1.twinx()
-        ax2.scatter(x_coor1, y_coor1, color='purple', marker='o', label="Polo izquierdo")  # Agregar el punto
-        ax2.scatter(x_coor2, y_coor2, color='purple', marker='o', label="Polo derecho")  # Agregar el punto
+        ax2.scatter(x_coor1, y_coor1, color='purple', marker='o', label=f"Polo izquierdo, {Vol1/1000} kV")  # Agregar el punto
+        ax2.scatter(x_coor2, y_coor2, color='purple', marker='o', label=f"Polo derecho, {Vol2/1000} kV")  # Agregar el punto
         ax2.set_ylabel('Altura (m)', fontsize=11, color='purple')
         ax2.tick_params(axis='y', labelcolor='purple')  # Ajustar el color de las etiquetas del eje secundario
         ax2.set_ylim(escala[0], escala[1])  # Definir el rango de 0 a 20
         ax2.legend(loc="upper right")
+        plt.tight_layout()
         guarda_graficos("Corriente_nivel_piso", ruta, guarda=guarda)
         # Mostrar la figura si mostrar=True
         if mostrar:
@@ -2025,14 +2433,17 @@ if __name__ == "__main__":
 
     def grafE1(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
-        plt.plot(x[30:-30], -Edefy[encuentra_nodos(x, y, 0, l)[1],30:-30]/1000)
+        plt.plot(x[30:-30], -Edefys[30:-30]/1000, label=r"$E_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Edefys/1000)))} kV/m")
+        plt.plot(x[30:-30], -Eyyini_nom[30:-30]/1000, label=r"$Ee_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Eyyini_nom/1000)))} kV/m")
+        plt.plot(x[30:-30], Edefs[30:-30]/1000,linestyle='-.', label=r"$|E|_{ave}$"f"= {formatear_numero(np.mean(np.abs(Edefs/1000)))} kV/m")
+        plt.plot(x[30:-30], Emis[30:-30]/1000,linestyle='-.', label=r"$|Ee|_{ave}$"f"= {formatear_numero(np.mean(np.abs(Emis/1000)))} kV/m")
         plt.plot(x_coor1, y_coor1)
         plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
         plt.ylabel(r'Campo eléctrico (kV/m)',fontsize=11)
         plt.title(r'Componente $E_y$ campo eléctrico a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(viento_x), fontsize=13)
-        plt.tight_layout()
+        
         #plt.legend([f'$E_y$ = {str(np.round(np.mean(Edefy[encuentra_nodos(x, y, 0, l)[1],:]/1000),5))} kV'])
-        plt.legend([f'$|E|$ = {str(np.round(np.mean(np.abs(Edef[encuentra_nodos(x, y, 0, l)[1],:]/1000)),5))} kV/m'])
+        plt.legend(loc="lower left")
         plt.grid(True)
         ax1 = plt.gca()
         if any(x<0 for x in -Edefy[encuentra_nodos(x, y, 0, l)[1],30:-30]):
@@ -2040,15 +2451,15 @@ if __name__ == "__main__":
         else:
             escala = [0,Sy]
         ax2 = ax1.twinx()
-        ax2.scatter(x_coor1, y_coor1, color='purple', marker='o', label="Polo izquierdo")  # Agregar el punto
-        ax2.scatter(x_coor2, y_coor2, color='purple', marker='o', label="Polo derecho")  # Agregar el punto
+        ax2.scatter(x_coor1, y_coor1, color='purple', marker='o', label=f"Polo izquierdo, {Vol1/1000} kV")  # Agregar el punto
+        ax2.scatter(x_coor2, y_coor2, color='purple', marker='o', label=f"Polo derecho, {Vol2/1000} kV")  # Agregar el punto
         ax2.set_ylabel('Altura (m)', fontsize=11, color='purple')
         ax2.tick_params(axis='y', labelcolor='purple')  # Ajustar el color de las etiquetas del eje secundario
         ax2.set_ylim(escala[0], escala[1])  # Definir el rango de 0 a 20
         ax2.legend(loc="upper right")
-    
         plt.tight_layout()
-        plt.legend(True)
+        #plt.tight_layout()
+        #plt.legend(True)
         guarda_graficos("Campo_nivel_piso", ruta, guarda=guarda)
         # Mostrar la figura si mostrar=True
         if mostrar:
@@ -2182,7 +2593,7 @@ if __name__ == "__main__":
         # Llamar a la ventana emergente
         preguntar_nuevo_modelo()
         
-    carpeta = f"modeloBIP_{Vol1/1000}_{cantidad}_{y_coor1}_{y_coor2}_{nodosx}_{nodosy}"
+    carpeta = f"modeloBIP_{Vol1/1000}_{cantidad}_{y_coor1}_{y_coor2}_{nodosx}_{nodosy}_{Req}"
     ruta_destino = f"C:\\Users\\HITES\\Desktop\\la uwu\\14vo semestre\\Trabajo de título\\programa resultados\\{carpeta}"
     Egraa = -Edefy[encuentra_nodos(x, y, 0, l)[1],:]/1000 # en kV/m
     Jgraa = Jtot[encuentra_nodos(x, y, 0, l)[1],:]*(10**9) # en nA/m^2
