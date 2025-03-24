@@ -1469,6 +1469,8 @@ if __name__ == "__main__":
         if fasc:
             Ecritpa = Ecritp*ajustar_gradiente(np.abs(Vol[0])/1000, V0p)
             Ecritna = Ecritn*ajustar_gradiente(np.abs(Vol[1])/1000, V0n)
+        else:
+            Ecritpa, Ecritna = Ecritp, Ecritn
         #V0p = V_onset(mp, Ecritp, R[0]) # cálcula voltaje crítico polo positivo
         #V0n = V_onset(mn, Ecritn, R[1]) # cálcula voltaje crítico polo negativo
         ycopcm = ajuste_ev(ycop*100) # en cm
@@ -1629,7 +1631,7 @@ if __name__ == "__main__":
             datos[grupo] = interpolador(grupo)
 
         return datos
-    def ajustar_suavizado(datos, factor_1=2, factor_2=1.5):
+    def ajustar_suavizado(datos, factor_1=2, factor_2=1.5, factor_3=0.7):
         """Ajusta la curva con suavizado sucesivo en dos pasos"""
         
         # 🔹 Primer paso: Detectar outliers y suavizar
@@ -1641,8 +1643,11 @@ if __name__ == "__main__":
 
         # 🔹 Segundo paso: Ajuste más fino con la nueva zona de outliers
         datos_suavizado_final = suavizado(y_suavizado_1, outliers_ampliados, factor=factor_2)
+        # 🔹 Ampliamos la zona afectada a los vecinos de los outliers
+        outliers_ampliados_2 = expandir_outliers(outliers_ampliados, n=1, longitud=len(datos))
+        datos_suavizado_final_2 = suavizado(datos_suavizado_final, outliers_ampliados_2, factor=factor_3)
 
-        return datos_suavizado_final
+        return datos_suavizado_final_2
 
     def ejecutar_algoritmo(sag, fixed_point, diametro, fixed_value, X, Y, R, Q, mov, m, delta, nodosy, nodosx, yco, g0,
                             dx, dy, windx, windy, max_iter_rho, Evvs, Vcos, max_iter, it_global, l, visualizacion, rho_h=False,
@@ -2470,29 +2475,29 @@ if __name__ == "__main__":
     def grafSPd(num, ruta, mostrar=False, guarda=False):
         fig = plt.figure(figsize=(12, 12))  # Tamaño ajustado para los subgráficos
         # Subgráfico 1
-        ax1 = fig.add_subplot(131, projection='3d')  # 1 fila, 2 columnas, gráfico 1
-        surf1 = ax1.plot_surface(X, Y, rho_d*10**(6), cmap='viridis', edgecolor='none')
-        fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)  # Barra de color
-        ax1.set_title(r'Densidad de carga iónica total')
-        ax1.set_xlabel('X')
-        ax1.set_ylabel('Y')
-        ax1.set_zlabel(r'$\rho (\mu C/m^3)$')
+        ax3 = fig.add_subplot(131, projection='3d')  # 1 fila, 2 columnas, gráfico 1
+        surf3 = ax3.plot_surface(X, Y, rho_p*10**(6), cmap='viridis', edgecolor='none')
+        fig.colorbar(surf3, ax=ax3, shrink=0.5, aspect=10)  # Barra de color
+        ax3.set_title(r'Densidad de carga iónica positiva')
+        ax3.set_xlabel('X (m)')
+        ax3.set_ylabel('Y (m)')
+        ax3.set_zlabel(r'$\rho (\mu C/m^3)$')
         # Subgráfico 2
         ax2 = fig.add_subplot(132, projection='3d')  # 1 fila, 2 columnas, gráfico 1
         surf2 = ax2.plot_surface(X, Y, rho_n*10**(6), cmap='viridis', edgecolor='none')
         fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10)  # Barra de color
         ax2.set_title(r'Densidad de carga iónica negativa')
-        ax2.set_xlabel('X')
-        ax2.set_ylabel('Y')
+        ax2.set_xlabel('X (m)')
+        ax2.set_ylabel('Y (m)')
         ax2.set_zlabel(r'$\rho (\mu C/m^3)$')
         # Subgráfico 3
-        ax3 = fig.add_subplot(133, projection='3d')  # 1 fila, 2 columnas, gráfico 1
-        surf3 = ax3.plot_surface(X, Y, rho_p*10**(6), cmap='viridis', edgecolor='none')
-        fig.colorbar(surf3, ax=ax3, shrink=0.5, aspect=10)  # Barra de color
-        ax3.set_title(r'Densidad de carga iónica positiva')
-        ax3.set_xlabel('X')
-        ax3.set_ylabel('Y')
-        ax3.set_zlabel(r'$\rho (\mu C/m^3)$')
+        ax1 = fig.add_subplot(133, projection='3d')  # 1 fila, 2 columnas, gráfico 1
+        surf1 = ax1.plot_surface(X, Y, rho_d*10**(6), cmap='viridis', edgecolor='none')
+        fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)  # Barra de color
+        ax1.set_title(r'Densidad de carga iónica total')
+        ax1.set_xlabel('X (m)')
+        ax1.set_ylabel('Y (m)')
+        ax1.set_zlabel(r'$\rho (\mu C/m^3)$')
         # Ajustar diseño
         plt.tight_layout()
         guarda_graficos("Graficos_densidad_3d", ruta, guarda=guarda)
@@ -2510,8 +2515,8 @@ if __name__ == "__main__":
         fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)  # Barra de color
 
         ax1.set_title(r'Potencial electrostático')
-        ax1.set_xlabel('X')
-        ax1.set_ylabel('Y')
+        ax1.set_xlabel('X (m)')
+        ax1.set_ylabel('Y (m)')
         ax1.set_zlabel(r'V(kV)')
 
         # Subgráfico 2
@@ -2520,8 +2525,8 @@ if __name__ == "__main__":
         fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10)  # Barra de color
 
         ax2.set_title('Potencial iónico')
-        ax2.set_xlabel('X')
-        ax2.set_ylabel('Y')
+        ax2.set_xlabel('X (m)')
+        ax2.set_ylabel('Y (m)')
         ax2.set_zlabel('V(kV)')
 
         # Subgráfico 3

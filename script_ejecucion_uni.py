@@ -864,6 +864,8 @@ if __name__ == "__main__":
         V0 = Vol_crit(Ecritp, yco*100, R*100) # cálcula voltaje crítico
         if fasc:
             Ecritpa = Ecritp*ajustar_gradiente(np.abs(Vol)/1000, V0)
+        else:
+            Ecritpa = Ecritp
         ycopcm = ajuste_ev(yco*100) # en cm
         V0 = Vol_crit(Ecritpa, ycopcm, R*100) # cálcula voltaje crítico polo positivo kV
         print(f"Diametro es {diametro}, epsilon0 es {epsilon0}, V0p es {V0} kV, Vol es {Vol} kV, Ecritp es {Ecritp}"
@@ -906,7 +908,7 @@ if __name__ == "__main__":
                 print('*****************************')
         if n==it_global-1:
             print(f'se alcanzó el máximo de iteraciones: {n}')
-        return Vm, rho_n/100
+        return Vm, rho_n/10
 
     def calcular_resultados_finales(Vm, Vo, Vco, Vmi, rho_n, dx, dy, mov, windx, windy, l, posicion_cond, Evv, is_bundled=False):
         """Calcula el campo eléctrico, densidad de corriente y verifica la convergencia."""
@@ -1139,7 +1141,19 @@ if __name__ == "__main__":
         if guarda:
             # Asegurarse de que la ruta existe
             if not os.path.exists(ruta):
-                os.makedirs(ruta)
+                os.makedirs(ruta, exist_ok=True)
+            # Verificar si la carpeta objetivo ya existe
+            nueva_ruta = os.path.join(ruta, "Resultados")
+            if os.path.exists(nueva_ruta):
+                # Agregar un sufijo '_new' al nombre si ya existe
+                nueva_ruta += "_new"
+                while os.path.exists(nueva_ruta):
+                    nueva_ruta += "_new"  # Repetir el sufijo si la carpeta '_new' también existe
+
+            try:
+                os.makedirs(nueva_ruta)
+            except OSError as e:
+                print(f"Error al crear la carpeta: {e}")
 
             # Crear DataFrame principal (Campo Eléctrico y Corriente)
             data_principal = {
@@ -1629,13 +1643,19 @@ if __name__ == "__main__":
 
     def grafJ1(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
+        mitad = len(x) // 2
         #plt.plot(x[30:-30], Jtot[coordenada_med,30:-30]*(10**9), label=r"$|J|_{ave}$ ="f"{formatear_numero(Jave*(10**9))}"+r" $nA/m^2$")
         #plt.plot(x[30:-30], -Jty[coordenada_med,30:-30]*(10**9),linestyle="-.", label=r"$J_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Jty[coordenada_med,:]*(10**9))))}"+r" $nA/m^2$") # perfil de la componente vertical de la densidad de corriente
+        
         plt.plot(x[30:-30], Jtots[30:-30]*(10**9), label=r"$|J|_{ave}$ ="f"{formatear_numero(Jave*(10**9))}"+r" $nA/m^2$")
         plt.plot(x[30:-30], -Jty_level[30:-30]*(10**9),linestyle="-.", label=r"$J_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Jty[coordenada_med,:]*(10**9))))}"+r" $nA/m^2$") # perfil de la componente vertical de la densidad de corriente
+        '''
+        plt.plot(x[mitad-40:-30], Jtots[mitad-40:-30]*(10**6), label=r"$|J|_{ave}$ ="f"{formatear_numero(Jave*(10**6))}"+r" $\mu A/m^2$")
+        plt.plot(x[mitad-40:-30], -Jty_level[mitad-40:-30]*(10**6),linestyle="-.", label=r"$J_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Jty[coordenada_med,:]*(10**6))))}"+r" $\mu A/m^2$") # perfil de la componente vertical de la densidad de corriente
+        '''
         plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
-        plt.ylabel(r'Densidad de corriente iónica ($nA/m^2$)',fontsize=11)
-        plt.title(r'Magnitud de corriente iónica a nivel de suelo, $l=$'+str(l)+' m, $w_x=$'+str(viento_x), fontsize=13)
+        plt.ylabel(r'Densidad de corriente iónica ($\mu A/m^2$)',fontsize=11)
+        plt.title(r'Magnitud de corriente iónica a nivel de suelo, $l=$'+str(l)+' m, $w_x=$'+str(viento_x)+'m/s', fontsize=13)
         
         #plt.legend([f'$J_p$ = {str(formatear_numero(np.round(Jave*(10**9),3)))} $nA/m^2$'])
         plt.legend(loc="lower left")
@@ -1662,14 +1682,22 @@ if __name__ == "__main__":
 
     def grafE1(num, ruta, mostrar=False, guarda=False):
         plt.figure(num)
+        mitad = len(x) // 2
+        
         plt.plot(x[30:-30], -Edefys[30:-30]/1000, label=r"$E_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Edefys/1000)))} kV/m")
         plt.plot(x[30:-30], -Eyyini_nom[30:-30]/1000, label=r"$Ee_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Eyyini_nom/1000)))} kV/m")
         plt.plot(x[30:-30], Edefs[30:-30]/1000,linestyle='-.', label=r"$|E|_{ave}$"f"= {formatear_numero(np.mean(np.abs(Edefs/1000)))} kV/m")
         plt.plot(x[30:-30], Emis[30:-30]/1000,linestyle='-.', label=r"$|Ee|_{ave}$"f"= {formatear_numero(np.mean(np.abs(Emis/1000)))} kV/m")
+        '''
+        plt.plot(x[mitad-40:-30], -Edefys[mitad-40:-30]/1000, label=r"$E_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Edefys/1000)))} kV/m")
+        plt.plot(x[mitad-40:-30], -Eyyini_nom[mitad-40:-30]/1000, label=r"$Ee_{y,ave}$"f"= {formatear_numero(np.mean(np.abs(Eyyini_nom/1000)))} kV/m")
+        plt.plot(x[mitad-40:-30], Edefs[mitad-40:-30]/1000, linestyle='-.', label=r"$|E|_{ave}$"f"= {formatear_numero(np.mean(np.abs(Edefs/1000)))} kV/m")
+        plt.plot(x[mitad-40:-30], Emis[mitad-40:-30]/1000, linestyle='-.', label=r"$|Ee|_{ave}$"f"= {formatear_numero(np.mean(np.abs(Emis/1000)))} kV/m")
+        '''
         plt.plot(x_coor, y_coor)
         plt.xlabel(r'Distancia horizontal (m)',fontsize=11)
         plt.ylabel(r'Campo eléctrico (kV/m)',fontsize=11)
-        plt.title(r'Magnitud de campo eléctrico a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(viento_x), fontsize=13)
+        plt.title(r'Magnitud de campo eléctrico a nivel de suelo, $l=$'+str(l)+r' m, $w_x=$'+str(viento_x)+'m/s', fontsize=13)
         plt.tight_layout()
         #plt.legend([f'$|E|_a$ = {str(formatear_numero(np.round(np.mean(Ei/1000),3)))} kV'])
         plt.legend(loc="lower left")
